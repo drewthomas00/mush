@@ -199,8 +199,14 @@ function render(s) {
       <span>${Math.round(s.short.used)}${s.short.max > 0 ? ' / ' + s.short.max : ''} min${s.short.max === 0 && !over ? ' ✓' : ''}</span></div></div>`);
   }
   $('goals').innerHTML = bars.join('');
+  // Paid minutes per app; free minutes (a daily puzzle) are shown apart and count nowhere else.
+  const free = s.appsFree ?? {};
   $('apps').innerHTML = Object.entries(s.appsToday).sort((a, b) => b[1] - a[1])
-    .map(([a, m]) => `<div><span>${esc(pretty(a))}</span><span>${fmtMin(m)}</span></div>`).join('');
+    .map(([a, m]) => {
+      const f = Object.hasOwn(free, a) ? free[a] : 0;
+      const label = f < 0.5 ? fmtMin(m) : m < 0.5 ? `${fmtMin(f)} free` : `${fmtMin(m)} + ${fmtMin(f)} free`;
+      return `<div><span>${esc(pretty(a))}</span><span>${label}</span></div>`;
+    }).join('');
 
   // 14-day chart with the break-even line (where a day's healing equals its rot)
   const even = (24 * s.rules.healPerHour) / (s.rules.drainPerMin + s.rules.healPerHour / 60);
@@ -215,7 +221,7 @@ function render(s) {
 
   $('recent').innerHTML = s.recent.length ? s.recent.map((r) => {
     const right = r.resisted ? '<span class="win">backed away</span>'
-      : `<span class="r">${fmtMin((r.end - r.start) / 60000)}${r.live ? ' · now' : ''}</span>`;
+      : `<span class="r">${fmtMin((r.end - r.start) / 60000)}${r.paidFrom >= r.end && r.end > r.start ? ' free' : ''}${r.live ? ' · now' : ''}</span>`;
     return `<li><span>${esc(pretty(r.app))} <span class="r">· ${timeOf(r.start)}</span></span>${right}</li>`;
   }).join('') : '<li class="empty">Nothing yet. Set up the Shortcuts on the Setup page.</li>';
 
@@ -225,7 +231,7 @@ function render(s) {
     <p>Every hour away heals ${R.healPerHour}%. Backing away at the prompt refunds the open, plus +${R.resistBonus}% at most once every ${R.resistBonusEveryMin} min.</p>
     <p>After “Rot anyway”, popping out and back within ${R.graceMin} min skips the prompt.</p>
     <p>After ${R.nudgeAfterMin} min in an app, Mush nudges you, then every ${R.nudgeEveryMin} min, and each minute from then on costs ${R.overstayDrainPerMin}%.</p>
-    ${Object.entries(R.freeMinPerDay).map(([a, m]) => `<p>${esc(pretty(a))}: the first ${m} min each day are free (no prompt, no cost, no nudges).</p>`).join('')}
+    ${Object.entries(R.freeMinPerDay).map(([a, m]) => `<p>${esc(pretty(a))}: the first ${m} min each day are free (no prompt, no cost, no nudges, and they don't count toward your totals, pace or goals).</p>`).join('')}
     <p>A session with no close counts for at most ${R.sessionCapMin} min.</p>`;
 }
 

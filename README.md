@@ -15,7 +15,7 @@ easy to swipe away; watching your own brain melt is harder.
 - **Nudges.** Stay, and the brain covers the screen again at 5 minutes and every 3 after that,
   and from the first nudge every minute costs double.
 - **Free minutes.** Give an app some minutes a day with no prompt, no cost and no nudges
-  (handy for a daily puzzle).
+  (handy for a daily puzzle). They don't count toward your totals, pace or goals.
 - **Goals.** A daily budget shared by the apps you pick (say, 30 minutes of Facebook and
   LinkedIn together), and optionally no short-form video at all. When a goal is used up, the
   prompt only offers *Back away*.

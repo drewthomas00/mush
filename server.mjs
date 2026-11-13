@@ -252,10 +252,12 @@ export function summarize(evs, now, rules = RULES) {
     if (!days.has(k)) days.set(k, { date: k, minutes: 0, opens: 0, resisted: 0 });
     return days.get(k);
   };
+  // Free minutes count nowhere: not in today's minutes, the chart, pace or goals (only appsFree shows them).
+  const paidStart = (s) => Math.min(Math.max(s.paidFrom ?? s.start, s.start), s.end);
   for (const s of r.sessions) {
     const d = day(dayKey(s.start));
     if (!s.cont) d.opens += 1;
-    d.minutes += (s.end - s.start) / MIN;
+    d.minutes += (s.end - paidStart(s)) / MIN;
     if (s.resisted) d.resisted += 1;
   }
   const last14 = [];
@@ -266,22 +268,21 @@ export function summarize(evs, now, rules = RULES) {
     last14.push(days.get(k) ?? { date: k, minutes: 0, opens: 0, resisted: 0 });
   }
   const today = last14.at(-1);
-  const minutesByApp = new Map();
+  const minutesByApp = new Map(); // paid minutes, which is also what goals count
+  const freeByApp = new Map();
   const opensByApp = new Map();
-  const paidByApp = new Map(); // minutes past the free ones, which is what goals count
   let shortToday = 0;
   for (const s of r.sessions) {
     if (dayKey(s.start) !== today.date) continue;
-    minutesByApp.set(s.app, (minutesByApp.get(s.app) ?? 0) + (s.end - s.start) / MIN);
+    minutesByApp.set(s.app, (minutesByApp.get(s.app) ?? 0) + (s.end - paidStart(s)) / MIN);
+    if (paidStart(s) > s.start) freeByApp.set(s.app, (freeByApp.get(s.app) ?? 0) + (paidStart(s) - s.start) / MIN);
     if (!s.cont) opensByApp.set(s.app, (opensByApp.get(s.app) ?? 0) + 1);
-    const paidFrom = Math.min(Math.max(s.paidFrom ?? s.start, s.start), s.end);
-    paidByApp.set(s.app, (paidByApp.get(s.app) ?? 0) + (s.end - paidFrom) / MIN);
     shortToday += (s.shortMs ?? 0) / MIN;
   }
   const goals = rules.goals.map((g) => ({
     apps: g.apps,
     max: g.max,
-    used: g.apps.reduce((sum, a) => sum + (paidByApp.get(a) ?? 0), 0),
+    used: g.apps.reduce((sum, a) => sum + (minutesByApp.get(a) ?? 0), 0),
   }));
 
   // Pace: today so far against the average of the last 7 days up to the same time of day.
@@ -294,7 +295,7 @@ export function summarize(evs, now, rules = RULES) {
     const from = new Date(n.getFullYear(), n.getMonth(), n.getDate() - d).getTime();
     const to = from + sinceMidnight;
     if (to <= first) break; // Mush wasn't in use yet by this time that day
-    for (const s of r.sessions) paceSum += Math.max(0, Math.min(s.end, to) - Math.max(s.start, from)) / MIN;
+    for (const s of r.sessions) paceSum += Math.max(0, Math.min(s.end, to) - Math.max(paidStart(s), from)) / MIN;
     paceDays++;
   }
   return {
@@ -303,6 +304,7 @@ export function summarize(evs, now, rules = RULES) {
     session: r.session,
     today,
     appsToday: Object.fromEntries(minutesByApp),
+    appsFree: Object.fromEntries(freeByApp),
     opensByApp,
     days: last14,
     recent: r.sessions.slice(-12).reverse(),

@@ -60,6 +60,7 @@ class Summary(
     val session: Session?,
     val today: Day,
     val appsToday: Map<String?, Double>,
+    val appsFree: Map<String?, Double>,
     val opensByApp: Map<String?, Int>,
     val days: List<Day>,
     val recent: List<Session>,
@@ -228,10 +229,12 @@ object Brain {
     fun summarize(evs: List<Event>, now: Long, rules: BrainRules = BrainRules(), zone: ZoneId = ZoneId.systemDefault()): Summary {
         val r = replay(evs, now, rules, zone)
         val days = HashMap<String, Day>()
+        // Free minutes count nowhere: not in today's minutes, the chart, pace or goals (only appsFree shows them).
+        fun paidStart(s: Session) = minOf(maxOf(s.paidFrom, s.start), s.end)
         for (s in r.sessions) {
             val d = days.getOrPut(dayKey(s.start, zone)) { Day(dayKey(s.start, zone)) }
             if (!s.cont) d.opens += 1
-            d.minutes += (s.end - s.start) / MIN
+            d.minutes += (s.end - paidStart(s)) / MIN
             if (s.resisted) d.resisted += 1
         }
         // Step by calendar day, not 24 h, so the day the clocks change is not doubled or dropped.
@@ -240,19 +243,18 @@ object Brain {
             val k = today.minusDays(i.toLong()).toString()
             days[k] ?: Day(k)
         }
-        val minutesByApp = LinkedHashMap<String?, Double>()
+        val minutesByApp = LinkedHashMap<String?, Double>() // paid minutes, which is also what goals count
+        val freeByApp = LinkedHashMap<String?, Double>()
         val opensByApp = LinkedHashMap<String?, Int>()
-        val paidByApp = HashMap<String?, Double>() // minutes past the free ones, which is what goals count
         var shortToday = 0.0
         for (s in r.sessions) {
             if (dayKey(s.start, zone) != today.toString()) continue
-            minutesByApp[s.app] = (minutesByApp[s.app] ?: 0.0) + (s.end - s.start) / MIN
+            minutesByApp[s.app] = (minutesByApp[s.app] ?: 0.0) + (s.end - paidStart(s)) / MIN
+            if (paidStart(s) > s.start) freeByApp[s.app] = (freeByApp[s.app] ?: 0.0) + (paidStart(s) - s.start) / MIN
             if (!s.cont) opensByApp[s.app] = (opensByApp[s.app] ?: 0) + 1
-            val paidFrom = minOf(maxOf(s.paidFrom, s.start), s.end)
-            paidByApp[s.app] = (paidByApp[s.app] ?: 0.0) + (s.end - paidFrom) / MIN
             shortToday += s.shortMs / MIN
         }
-        val goals = rules.goals.map { g -> GoalUse(g, g.apps.sumOf { paidByApp[it] ?: 0.0 }) }
+        val goals = rules.goals.map { g -> GoalUse(g, g.apps.sumOf { minutesByApp[it] ?: 0.0 }) }
 
         // Pace: today so far against the average of the last 7 days up to the same time of day.
         val midnight = today.atStartOfDay(zone).toInstant().toEpochMilli()
@@ -264,7 +266,7 @@ object Brain {
             val from = today.minusDays(d.toLong()).atStartOfDay(zone).toInstant().toEpochMilli()
             if (from + sinceMidnight <= first) break // Mush wasn't in use yet by this time that day
             val to = from + sinceMidnight
-            for (s in r.sessions) paceSum += maxOf(0L, minOf(s.end, to) - maxOf(s.start, from)) / MIN
+            for (s in r.sessions) paceSum += maxOf(0L, minOf(s.end, to) - maxOf(paidStart(s), from)) / MIN
             paceDays++
         }
         return Summary(
@@ -273,6 +275,7 @@ object Brain {
             session = r.session,
             today = last14.last(),
             appsToday = minutesByApp,
+            appsFree = freeByApp,
             opensByApp = opensByApp,
             days = last14,
             recent = r.sessions.takeLast(12).reversed(),

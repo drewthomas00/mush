@@ -19,8 +19,8 @@ android {
         minSdk = 33 // Android 13+
         targetSdk = 35
         // Bump both for every release; F-Droid reads them from here and from the vX.Y.Z tag.
-        versionCode = 13
-        versionName = "1.1.1"
+        versionCode = 14
+        versionName = "1.1.2"
         buildConfigField("String", "DONATE_VENMO", "\"$donateVenmo\"")
         buildConfigField("String", "DONATE_PAYPAL", "\"$donatePaypal\"")
     }

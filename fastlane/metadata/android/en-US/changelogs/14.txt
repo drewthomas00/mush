@@ -1,0 +1,1 @@
+Free minutes (a daily puzzle) no longer count as scrolling: today's total, the widget, pace and the 14-day chart leave them out. The app list shows them apart.

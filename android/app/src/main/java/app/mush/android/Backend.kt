@@ -138,6 +138,7 @@ class Local private constructor(private val ctx: Context) : Backend {
             .put("session", s.session?.let { sess(it) } ?: JSONObject.NULL)
             .put("today", day(s.today))
             .put("appsToday", JSONObject().apply { s.appsToday.forEach { (k, v) -> put(k ?: "unknown", v) } })
+            .put("appsFree", JSONObject().apply { s.appsFree.forEach { (k, v) -> put(k ?: "unknown", v) } })
             .put("days", JSONArray().apply { s.days.forEach { put(day(it)) } })
             .put("recent", JSONArray().apply { s.recent.forEach { put(sess(it)) } })
             .put("rules", JSONObject()

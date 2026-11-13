@@ -167,6 +167,12 @@ pace.sort((a, b) => a.t - b.t); // the log is always in time order
 sm = summarize(pace, t0, G);
 near(sm.pace.avg, 20); assert.equal(sm.pace.days, 7); // 20 min before noon each day; the afternoon sessions are later than now
 near(sm.pace.today, 10);
+// free puzzle minutes count nowhere: not today's minutes, the app list, the chart, pace or goals
+sm = summarize([ev(-1470, 'open', 'linkedin'), ev(-1455, 'close', 'linkedin'), ev(-30, 'open', 'linkedin'), ev(-15, 'close', 'linkedin')], t0, G);
+near(sm.today.minutes, 5); near(sm.appsToday.linkedin, 5); near(sm.appsFree.linkedin, 10); near(sm.goals[0].used, 5);
+near(sm.days.at(-2).minutes, 5); near(sm.pace.today, 5); near(sm.pace.avg, 5);
+sm = summarize([ev(-30, 'open', 'linkedin'), ev(-24, 'close', 'linkedin')], t0, G);
+near(sm.today.minutes, 0); near(sm.appsToday.linkedin, 0); near(sm.appsFree.linkedin, 6);
 // a goal crossed mid-session stops it (but not inside free minutes), and the nudge says so
 sm = summarize([ev(0, 'open', 'facebook'), ev(31, 'still', 'facebook')], t0 + 31 * M, G);
 assert.ok(stopNow(sm, sm.session, t0 + 31 * M).startsWith('⛔ Over today'));

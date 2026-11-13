@@ -143,6 +143,14 @@ class BrainTest {
         near(10.0, s.pace.today)
     }
 
+    @Test fun freeMinutesCountNowhere() {
+        var s = sum(listOf(ev(-1470.0, "open", "linkedin"), ev(-1455.0, "close", "linkedin"), ev(-30.0, "open", "linkedin"), ev(-15.0, "close", "linkedin")), t0)
+        near(5.0, s.today.minutes); near(5.0, s.appsToday["linkedin"]!!); near(10.0, s.appsFree["linkedin"]!!); near(5.0, s.goals[0].used)
+        near(5.0, s.days[s.days.size - 2].minutes); near(5.0, s.pace.today); near(5.0, s.pace.avg!!)
+        s = sum(listOf(ev(-30.0, "open", "linkedin"), ev(-24.0, "close", "linkedin")), t0)
+        near(0.0, s.today.minutes); near(0.0, s.appsToday["linkedin"]!!); near(6.0, s.appsFree["linkedin"]!!)
+    }
+
     @Test fun aGoalCrossedMidSessionStopsItButNotInFreeMinutes() {
         var s = sum(listOf(ev(0.0, "open", "facebook"), ev(31.0, "still", "facebook")), t0 + 31 * M)
         assertTrue(Brain.stopNow(s, s.session!!, t0 + 31 * M)!!.startsWith("⛔ Over today"))
