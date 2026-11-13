@@ -13,9 +13,11 @@ import java.io.File
  * devices (an iPhone too) share one brain. Callbacks always come back on the main thread.
  */
 interface Backend {
-    /** "true" to let you in (free minutes, grace), the prompt text otherwise, null if unreachable. */
-    fun open(app: String, done: (String?) -> Unit)
-    fun record(type: String, app: String) // close, rot, resist, still
+    /** Records the open; the gate's decision (allow, hard stop, or the prompt), null if unreachable. */
+    fun open(app: String, short: Boolean, done: (Decision?) -> Unit)
+    /** Short-form video started inside the live session; the stop text if that's past the goal, else null. */
+    fun short(app: String, done: (String?) -> Unit)
+    fun record(type: String, app: String) // close, rot, resist, still, unshort
     /** {due, title, body} for the live session in `app`, or null. */
     fun nudge(app: String, done: (JSONObject?) -> Unit)
     fun state(done: (JSONObject?) -> Unit)
@@ -29,8 +31,18 @@ interface Backend {
 /** The Mush server, over the tailnet or wherever it runs. */
 class Remote(private val ctx: Context) : Backend {
     override val shared = true
-    override fun open(app: String, done: (String?) -> Unit) =
-        Api.get(ctx, "/api/open?app=${Api.q(app)}&dev=android") { done(it?.trim()); Widget.refresh(ctx) }
+    override fun open(app: String, short: Boolean, done: (Decision?) -> Unit) =
+        Api.get(ctx, "/api/open?app=${Api.q(app)}&dev=android&fmt=json${if (short) "&short=1" else ""}") { body ->
+            done(body?.let { b ->
+                runCatching { JSONObject(b) }.getOrNull()?.let { Decision(it.optBoolean("allow"), it.optBoolean("stop"), it.optString("text").ifEmpty { null }) }
+            })
+            Widget.refresh(ctx)
+        }
+    override fun short(app: String, done: (String?) -> Unit) =
+        Api.get(ctx, "/api/short?app=${Api.q(app)}&dev=android") { body ->
+            val o = body?.let { runCatching { JSONObject(it) }.getOrNull() }
+            done(if (o?.optBoolean("stop") == true) o.optString("text") else null)
+        }
     override fun record(type: String, app: String) =
         Api.get(ctx, "/api/$type?app=${Api.q(app)}&dev=android") { Widget.refresh(ctx) }
     override fun nudge(app: String, done: (JSONObject?) -> Unit) =
@@ -58,7 +70,7 @@ class Local private constructor(private val ctx: Context) : Backend {
         }
     }
 
-    fun rules(): BrainRules = BrainRules(freeMinPerDay = FreeMinutes.all(ctx))
+    fun rules(): BrainRules = BrainRules(freeMinPerDay = FreeMinutes.all(ctx), goals = Goals.groups(ctx), shortMax = Goals.shortMax(ctx))
 
     private fun now() = synchronized(lock) { maxOf(System.currentTimeMillis(), events.lastOrNull()?.t ?: 0L) }
 
@@ -74,12 +86,19 @@ class Local private constructor(private val ctx: Context) : Backend {
 
     private fun summary(now: Long) = synchronized(lock) { Brain.summarize(events.toList(), now, rules()) }
 
-    override fun open(app: String, done: (String?) -> Unit) {
+    override fun open(app: String, short: Boolean, done: (Decision?) -> Unit) {
         val t = now()
         add("open", app, t)
-        val s = summary(t)
-        val answer = if (s.session?.cont == true || s.session?.free == true) "true" else Brain.gateText(s, app, rules())
-        main.post { done(answer) }
+        if (short) add("short", app, t)
+        val d = Brain.decide(summary(t), app, short, rules())
+        main.post { done(d) }
+    }
+
+    override fun short(app: String, done: (String?) -> Unit) {
+        val t = now()
+        add("short", app, t)
+        val stop = Brain.shortStop(summary(t), app)
+        main.post { done(stop) }
     }
 
     override fun record(type: String, app: String) { add(type, app, now()) }
@@ -90,7 +109,9 @@ class Local private constructor(private val ctx: Context) : Backend {
         val live = s.session
         val out = if (live == null || live.app != app) JSONObject().put("due", 0) else {
             val (due, msg) = Brain.nudgeMessage(s, live, t, rules())
-            JSONObject().put("due", due).apply { msg?.let { put("title", it.first).put("body", it.second) } }
+            val stop = Brain.stopNow(s, live, t)
+            if (stop != null) JSONObject().put("due", due).put("stop", true).put("title", "⛔ Goal reached").put("body", stop)
+            else JSONObject().put("due", due).apply { msg?.let { put("title", it.first).put("body", it.second) } }
         }
         main.post { done(out) }
     }
@@ -107,7 +128,7 @@ class Local private constructor(private val ctx: Context) : Backend {
         val r = rules()
         fun sess(x: Session) = JSONObject().put("app", x.app ?: JSONObject.NULL).put("start", x.start).put("origin", x.origin)
             .put("end", x.end).put("paidFrom", x.paidFrom).put("resisted", x.resisted).put("cont", x.cont)
-            .put("free", x.free).put("live", x.live).put("dev", "android")
+            .put("free", x.free).put("live", x.live).put("dev", "android").put("shortMs", x.shortMs).put("shortOn", x.shortOn)
         fun day(d: Day) = JSONObject().put("date", d.date).put("minutes", d.minutes).put("opens", d.opens).put("resisted", d.resisted)
         return JSONObject()
             .put("health", s.health)
@@ -123,6 +144,11 @@ class Local private constructor(private val ctx: Context) : Backend {
                 .put("sessionCapMin", r.sessionCapMin).put("graceMin", r.graceMin).put("nudgeAfterMin", r.nudgeAfterMin)
                 .put("nudgeEveryMin", r.nudgeEveryMin).put("overstayDrainPerMin", r.overstayDrainPerMin)
                 .put("freeMinPerDay", JSONObject().apply { r.freeMinPerDay.forEach { (k, v) -> put(k, v) } }))
+            .put("goals", JSONArray().apply {
+                s.goals.forEach { g -> put(JSONObject().put("apps", JSONArray(g.goal.apps.sorted())).put("max", g.goal.max).put("used", g.used)) }
+            })
+            .put("short", JSONObject().put("used", s.shortUsed).put("max", s.shortMax ?: JSONObject.NULL))
+            .put("pace", JSONObject().put("today", s.pace.today).put("avg", s.pace.avg ?: JSONObject.NULL).put("days", s.pace.days))
             .put("now", t)
     }
 
@@ -132,6 +158,17 @@ class Local private constructor(private val ctx: Context) : Backend {
             instance ?: Local(ctx.applicationContext).also { instance = it }
         }
     }
+}
+
+/** Daily goals, set in Setup (on its own; a server has its own, MUSH_GOALS). */
+object Goals {
+    fun groups(ctx: Context): List<Goal> {
+        val p = Api.prefs(ctx)
+        val apps = p.getStringSet("goalApps", null).orEmpty()
+        val max = p.getInt("goalMin", 0)
+        return if (apps.isNotEmpty() && max > 0) listOf(Goal(apps, max.toDouble())) else emptyList()
+    }
+    fun shortMax(ctx: Context): Double? = if (Api.prefs(ctx).getBoolean("noShort", false)) 0.0 else null
 }
 
 /** Free minutes a day per gated app, set in Setup (on its own; a server has its own list). */

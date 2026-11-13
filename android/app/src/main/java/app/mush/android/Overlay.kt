@@ -36,7 +36,7 @@ class Overlay(private val svc: AccessibilityService) {
     fun show(
         message: String,
         primary: String,
-        secondary: String,
+        secondary: String?,
         onPrimary: () -> Unit,
         onSecondary: () -> Unit,
         tertiary: String? = null,
@@ -68,8 +68,10 @@ class Overlay(private val svc: AccessibilityService) {
             setPadding(0, dp(12), 0, dp(20))
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         col.addView(button(primary, Color.rgb(0xff, 0x93, 0xb6), Color.rgb(0x23, 0x1d, 0x2b), dp) { hide(); onPrimary() })
-        col.addView(View(svc), LinearLayout.LayoutParams(1, dp(10)))
-        col.addView(button(secondary, Color.rgb(0x32, 0x2b, 0x3e), Color.rgb(0xa5, 0x9c, 0xb1), dp) { hide(); onSecondary() })
+        if (secondary != null) { // a hard stop has no second way
+            col.addView(View(svc), LinearLayout.LayoutParams(1, dp(10)))
+            col.addView(button(secondary, Color.rgb(0x32, 0x2b, 0x3e), Color.rgb(0xa5, 0x9c, 0xb1), dp) { hide(); onSecondary() })
+        }
         if (tertiary != null) {
             col.addView(TextView(svc).apply {
                 text = tertiary

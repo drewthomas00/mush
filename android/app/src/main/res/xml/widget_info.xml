@@ -3,10 +3,10 @@
     android:description="@string/widget_description"
     android:initialLayout="@layout/widget"
     android:minWidth="110dp"
-    android:minHeight="110dp"
+    android:minHeight="160dp"
     android:previewLayout="@layout/widget"
     android:resizeMode="horizontal|vertical"
     android:targetCellWidth="2"
-    android:targetCellHeight="2"
+    android:targetCellHeight="3"
     android:updatePeriodMillis="1800000"
     android:widgetCategory="home_screen" />

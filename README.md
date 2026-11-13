@@ -16,6 +16,11 @@ easy to swipe away; watching your own brain melt is harder.
   and from the first nudge every minute costs double.
 - **Free minutes.** Give an app some minutes a day with no prompt, no cost and no nudges
   (handy for a daily puzzle).
+- **Goals.** A daily budget shared by the apps you pick (say, 30 minutes of Facebook and
+  LinkedIn together), and optionally no short-form video at all. When a goal is used up, the
+  prompt only offers *Back away*.
+- **Pace.** The brain page and the widget show today's scrolling against your 7-day average up
+  to the same time of day: ahead of pace or behind it.
 - **No account, no ads, no tracking.** On its own, everything stays on your phone.
 
 ## Android
@@ -52,6 +57,8 @@ node server.mjs            # listens on 127.0.0.1:8473; data in ./data
 Put it behind HTTPS that only your devices can reach, for example on a Tailscale tailnet:
 `tailscale serve --bg --https=8461 http://127.0.0.1:8473`. A systemd user unit is in
 `deploy/mush.service`. Free minutes a day per app: `MUSH_FREE_MINUTES="linkedin=10,reddit=5"`.
+Goals: `MUSH_GOALS="facebook+linkedin=30,short=0"` (a shared budget of paid minutes, and short-form
+minutes allowed a day; 0 means none). Apps that are short-form throughout: `MUSH_SHORT_APPS=tiktok`.
 Tuning (drain, healing, nudges) is `RULES` at the top of `server.mjs`; the phone's own brain
 (`android/.../Brain.kt`) uses the same model.
 

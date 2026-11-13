@@ -1,6 +1,6 @@
 // Quick checks of the health model: node tools/check.mjs
 import assert from 'node:assert/strict';
-import { replay, nudgesDue, RULES } from '../server.mjs';
+import { replay, nudgesDue, RULES, summarize, decide } from '../server.mjs';
 
 const M = 60_000, H = 3_600_000, t0 = Date.UTC(2026, 0, 1, 12);
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-6, `${a} != ${b}`);
@@ -133,6 +133,40 @@ assert.equal(r.session, null); assert.equal(r.sessions.at(-1).end, t0 + 45 * M);
 // a heartbeat for another app does nothing
 r = replay([ev(0, 'open'), ev(30, 'still', 'tiktok')], t0 + 50 * M);
 assert.equal(r.session, null);
+
+// ---- goals, short-form, pace (MUSH_GOALS="facebook+linkedin=30,short=0" on a server)
+const G = { ...RULES, freeMinPerDay: { linkedin: 10 }, goals: [{ apps: ['facebook', 'linkedin'], max: 30 }], shortMax: 0, shortApps: ['tiktok'] };
+// the budget is shared, counts paid minutes only, and gates normally until it's used up
+let sm = summarize([ev(0, 'open', 'facebook'), ev(20, 'close', 'facebook'), ev(30, 'open', 'linkedin'), ev(45, 'close', 'linkedin')], t0 + 46 * M, G);
+assert.equal(Math.round(sm.goals[0].used), 25); // 20 facebook + 5 linkedin (its first 10 are free)
+let d = decide(summarize([ev(0, 'open', 'facebook'), ev(20, 'close', 'facebook'), ev(30, 'open', 'facebook')], t0 + 30 * M, G), 'facebook');
+assert.equal(d.stop, false); assert.ok(d.text.includes('Goal: 10 of 30 min left'));
+// used up: a hard stop, even coming back inside the grace window
+const over = [ev(0, 'open', 'facebook'), ev(0, 'rot', 'facebook'), ev(31, 'close', 'facebook'), ev(32, 'open', 'facebook')];
+d = decide(summarize(over, t0 + 32 * M, G), 'facebook');
+assert.equal(d.stop, true); assert.ok(d.text.startsWith('⛔ Over today'));
+// ...but free puzzle minutes still let you in past the goal
+d = decide(summarize([ev(0, 'open', 'facebook'), ev(31, 'close', 'facebook'), ev(40, 'open', 'linkedin')], t0 + 40 * M, G), 'linkedin');
+assert.equal(d.allow, true);
+// no goal for an app: the normal prompt
+d = decide(summarize([ev(0, 'open', 'instagram')], t0, G), 'instagram');
+assert.equal(d.stop, false); assert.equal(d.allow, false);
+// short-form with a goal of 0: always a stop, even in free minutes or grace; TikTok counts as short-form throughout
+assert.equal(decide(summarize([ev(0, 'open', 'tiktok')], t0, G), 'tiktok').stop, true);
+assert.equal(decide(summarize([ev(0, 'open', 'linkedin'), ev(0, 'short', 'linkedin')], t0, G), 'linkedin', true).stop, true);
+// short-form minutes are counted from 'short' to 'unshort' (or the end of the session)
+sm = summarize([ev(0, 'open', 'facebook'), ev(5, 'short', 'facebook'), ev(9, 'unshort', 'facebook'), ev(12, 'short', 'facebook'), ev(15, 'close', 'facebook')], t0 + 16 * M, G);
+near(sm.short.used, 7);
+sm = summarize([ev(0, 'open', 'facebook'), ev(5, 'short', 'facebook')], t0 + 8 * M, G);
+near(sm.short.used, 3); assert.equal(sm.session.shortOn, true);
+// pace: today so far against the last 7 days up to the same time of day
+const pace = [];
+for (let dd = 1; dd <= 7; dd++) pace.push(ev(-dd * 1440 - 60, 'open', 'facebook'), ev(-dd * 1440 - 40, 'close', 'facebook'), ev(-dd * 1440 + 60, 'open', 'facebook'), ev(-dd * 1440 + 90, 'close', 'facebook'));
+pace.push(ev(-30, 'open', 'facebook'), ev(-20, 'close', 'facebook'));
+pace.sort((a, b) => a.t - b.t); // the log is always in time order
+sm = summarize(pace, t0, G);
+near(sm.pace.avg, 20); assert.equal(sm.pace.days, 7); // 20 min before noon each day; the afternoon sessions are later than now
+near(sm.pace.today, 10);
 
 // floor
 r = flat([ev(0, 'open'), ev(44, 'close'), ev(44, 'open'), ev(88, 'close'), ev(88, 'open'), ev(130, 'close')], t0 + 130 * M);

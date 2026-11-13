@@ -33,6 +33,7 @@ class SetupActivity : Activity() {
     private lateinit var captureInfo: TextView
     private lateinit var ignoredBox: LinearLayout
     private lateinit var gatesBox: LinearLayout
+    private lateinit var goalsBox: LinearLayout
 
     private val ink = Color.rgb(0xf3, 0xee, 0xf7)
     private val muted = Color.rgb(0xa5, 0x9c, 0xb1)
@@ -76,6 +77,11 @@ class SetupActivity : Activity() {
         text("These get Back away / Rot anyway the moment they open. Free minutes: that many minutes a day with no prompt, no cost and no nudges.", 14f, muted)
         gatesBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         col.addView(gatesBox)
+
+        heading("Daily goal")
+        text("A daily budget of scrolling, shared by the apps you tick (free minutes don't count). When it's used up, the prompt only offers Back away.", 14f, muted)
+        goalsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        col.addView(goalsBox)
 
         heading("Not video")
         text("Apps where you tapped \"This isn't video\". Mush won't watch them for short-form video (gated apps still get the prompt).", 14f, muted)
@@ -196,6 +202,46 @@ class SetupActivity : Activity() {
             gatesBox.addView(row)
         }
         if (shared) gatesBox.addView(TextView(this).apply { text = "Free minutes come from your server's rules."; setTextColor(muted) })
+
+        // Daily goal: on its own, set here; with a server, MUSH_GOALS there.
+        goalsBox.removeAllViews()
+        if (shared) {
+            goalsBox.addView(TextView(this).apply { text = "Goals come from your server (MUSH_GOALS)."; setTextColor(muted) })
+        } else {
+            val chosen = p.getStringSet("goalApps", null).orEmpty()
+            for (app in rules.gates.map { it.app }.distinct()) {
+                goalsBox.addView(android.widget.CheckBox(this).apply {
+                    text = Brain.pretty(app)
+                    setTextColor(ink)
+                    isChecked = app in chosen
+                    setOnCheckedChangeListener { _, on ->
+                        val now = p.getStringSet("goalApps", null).orEmpty()
+                        p.edit().putStringSet("goalApps", if (on) now + app else now - app).apply()
+                    }
+                })
+            }
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            row.addView(TextView(this).apply { text = "At most "; setTextColor(ink) })
+            row.addView(EditText(this).apply {
+                setText(p.getInt("goalMin", 0).takeIf { it > 0 }?.toString() ?: "")
+                hint = "30"
+                setTextColor(ink)
+                setHintTextColor(muted)
+                inputType = InputType.TYPE_CLASS_NUMBER
+                setEms(3)
+                setOnFocusChangeListener { v, has ->
+                    if (!has) p.edit().putInt("goalMin", ((v as EditText).text.toString().toIntOrNull() ?: 0).coerceIn(0, 1440)).apply()
+                }
+            })
+            row.addView(TextView(this).apply { text = " min a day, together"; setTextColor(ink) })
+            goalsBox.addView(row)
+            goalsBox.addView(Switch(this).apply {
+                text = "No short-form video at all"
+                setTextColor(ink)
+                isChecked = p.getBoolean("noShort", false)
+                setOnCheckedChangeListener { _, on -> p.edit().putBoolean("noShort", on).apply() }
+            })
+        }
 
         ignoredBox.removeAllViews()
         val ignored = p.getStringSet("ignored", null).orEmpty().sorted()

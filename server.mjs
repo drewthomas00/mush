@@ -30,6 +30,22 @@ function parseFree(spec = '') {
   return out;
 }
 
+// MUSH_GOALS="facebook+linkedin=30,short=0": a daily budget of paid minutes (free minutes don't
+// count) shared by the apps joined with '+', and short=N for short-form video (0: none at all).
+function parseGoals(spec = '') {
+  const groups = [];
+  let shortMax = null;
+  for (const part of spec.split(',')) {
+    const [lhs, rhs] = part.split('=').map((x) => x?.trim());
+    const max = Number(rhs);
+    if (!lhs || rhs === undefined || rhs === '' || !Number.isFinite(max) || max < 0) continue;
+    if (lhs.toLowerCase() === 'short') shortMax = max;
+    else groups.push({ apps: lhs.toLowerCase().split('+').map((a) => a.trim()).filter(Boolean), max });
+  }
+  return { groups, shortMax };
+}
+const GOALS = parseGoals(process.env.MUSH_GOALS);
+
 export const RULES = {
   drainPerMin: 1,          // health lost per minute inside a tracked app
   healPerHour: 4,          // health regained per hour away (break-even is ~90 min of scrolling a day)
@@ -43,6 +59,10 @@ export const RULES = {
   overstayDrainPerMin: 2,  // and from the first nudge on, every minute costs this much
   // free minutes a day per app: no prompt, no cost, no nudges. MUSH_FREE_MINUTES="linkedin=10,reddit=5"
   freeMinPerDay: parseFree(process.env.MUSH_FREE_MINUTES),
+  goals: GOALS.groups,       // [{ apps: ['facebook', 'linkedin'], max: 30 }]: at the max, the gate is a hard stop
+  shortMax: GOALS.shortMax,  // daily minutes of short-form video allowed; 0 = none; null = no goal
+  // apps that are short-form through and through (the iPhone can't see inside apps)
+  shortApps: (process.env.MUSH_SHORT_APPS ?? 'tiktok').split(',').map((a) => a.trim().toLowerCase()).filter(Boolean),
 };
 
 const MIN = 60_000;
@@ -86,7 +106,8 @@ export function replay(evs, now, rules = RULES) {
   let last = evs[0]?.t ?? now;
   // origin: when this run began (survives pop-outs inside grace). paidFrom: when its free minutes run out.
   // capBase: the cap runs from here, the open or the latest "still here" from a device that knows (Android).
-  let session = null; // { app, start, origin, paidFrom, capBase, rot, cont, free, dev }
+  // shortFrom: when the current stretch of short-form video began (null when there's none); shortMs: total so far.
+  let session = null; // { app, start, origin, paidFrom, capBase, rot, cont, free, dev, shortFrom, shortMs }
   const sessions = []; // { app, start, end, resisted, cont, free }
   const graceFrom = new Map(); // app -> the rot, or the close of a session you chose to rot in
   const graceOrigin = new Map(); // app -> when that run of sessions began
@@ -117,7 +138,8 @@ export function replay(evs, now, rules = RULES) {
   const endSession = (t, resisted = false) => {
     const { app, start, origin, paidFrom, capBase, cont, rot, free } = session;
     const end = Math.min(t, capBase + cap);
-    sessions.push({ app, start, origin, end, resisted, cont, free });
+    const shortMs = session.shortMs + (session.shortFrom === null ? 0 : Math.max(0, end - session.shortFrom));
+    sessions.push({ app, start, origin, end, resisted, cont, free, paidFrom, shortMs });
     const usedFree = Math.min(end, paidFrom) - start;
     if (usedFree > 0) {
       const k = `${app}|${dayKey(start)}`;
@@ -138,6 +160,7 @@ export function replay(evs, now, rules = RULES) {
         session = {
           app: ev.app, start: ev.t, origin: cont ? graceOrigin.get(ev.app) ?? ev.t : ev.t,
           paidFrom: ev.t + left, capBase: ev.t, rot: cont, cont, free: left > 0, dev: ev.dev ?? 'ios',
+          shortFrom: rules.shortApps.includes(ev.app) ? ev.t : null, shortMs: 0,
         };
         if (!cont && left === 0) h = clamp(h - rules.openCost);
         break;
@@ -145,6 +168,15 @@ export function replay(evs, now, rules = RULES) {
       case 'still':
         // Only while the session is still within its cap: a late heartbeat must not revive one that ended.
         if (session && session.app === ev.app && ev.t < session.capBase + cap) session.capBase = Math.max(session.capBase, ev.t);
+        break;
+      case 'short':
+        if (session && session.app === ev.app && session.shortFrom === null && ev.t < session.capBase + cap) session.shortFrom = ev.t;
+        break;
+      case 'unshort':
+        if (session && session.app === ev.app && session.shortFrom !== null) {
+          session.shortMs += Math.max(0, Math.min(ev.t, session.capBase + cap) - session.shortFrom);
+          session.shortFrom = null;
+        }
         break;
       case 'close':
         // App switches can deliver "B opened" before "A closed"; only close the app we are in.
@@ -191,7 +223,10 @@ export function replay(evs, now, rules = RULES) {
   let live = null;
   if (session) {
     const { app, start, origin, paidFrom, capBase, cont, free, dev } = session;
-    const capped = { app, start, origin, paidFrom, end: Math.min(now, capBase + cap), resisted: false, cont, free, dev };
+    const end = Math.min(now, capBase + cap);
+    const shortOn = session.shortFrom !== null && now < capBase + cap;
+    const shortMs = session.shortMs + (session.shortFrom === null ? 0 : Math.max(0, end - session.shortFrom));
+    const capped = { app, start, origin, paidFrom, end, resisted: false, cont, free, dev, shortMs, shortOn };
     if (now < capBase + cap) live = { ...capped, live: true };
     sessions.push(live ?? capped); // past the cap it is over, whether or not a close ever arrives
   }
@@ -209,8 +244,8 @@ export function mood(h) {
 
 const dayKey = (t) => new Date(t).toLocaleDateString('en-CA'); // YYYY-MM-DD, server's time zone
 
-function summarize(evs, now) {
-  const r = replay(evs, now);
+export function summarize(evs, now, rules = RULES) {
+  const r = replay(evs, now, rules);
   const days = new Map();
   const day = (k) => {
     if (!days.has(k)) days.set(k, { date: k, minutes: 0, opens: 0, resisted: 0 });
@@ -232,10 +267,34 @@ function summarize(evs, now) {
   const today = last14.at(-1);
   const minutesByApp = new Map();
   const opensByApp = new Map();
+  const paidByApp = new Map(); // minutes past the free ones, which is what goals count
+  let shortToday = 0;
   for (const s of r.sessions) {
     if (dayKey(s.start) !== today.date) continue;
     minutesByApp.set(s.app, (minutesByApp.get(s.app) ?? 0) + (s.end - s.start) / MIN);
     if (!s.cont) opensByApp.set(s.app, (opensByApp.get(s.app) ?? 0) + 1);
+    const paidFrom = Math.min(Math.max(s.paidFrom ?? s.start, s.start), s.end);
+    paidByApp.set(s.app, (paidByApp.get(s.app) ?? 0) + (s.end - paidFrom) / MIN);
+    shortToday += (s.shortMs ?? 0) / MIN;
+  }
+  const goals = rules.goals.map((g) => ({
+    apps: g.apps,
+    max: g.max,
+    used: g.apps.reduce((sum, a) => sum + (paidByApp.get(a) ?? 0), 0),
+  }));
+
+  // Pace: today so far against the average of the last 7 days up to the same time of day.
+  const midnight = new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime();
+  const sinceMidnight = now - midnight;
+  const first = evs[0]?.t ?? now;
+  let paceSum = 0;
+  let paceDays = 0;
+  for (let d = 1; d <= 7; d++) {
+    const from = new Date(n.getFullYear(), n.getMonth(), n.getDate() - d).getTime();
+    if (from + 24 * HOUR <= first) break; // Mush wasn't in use yet that day
+    const to = from + sinceMidnight;
+    for (const s of r.sessions) paceSum += Math.max(0, Math.min(s.end, to) - Math.max(s.start, from)) / MIN;
+    paceDays++;
   }
   return {
     health: Math.round(r.health * 10) / 10,
@@ -246,9 +305,41 @@ function summarize(evs, now) {
     opensByApp,
     days: last14,
     recent: r.sessions.slice(-12).reverse(),
-    rules: RULES,
+    goals,
+    short: { used: shortToday, max: rules.shortMax },
+    pace: { today: today.minutes, avg: paceDays ? paceSum / paceDays : null, days: paceDays },
+    rules,
     now,
   };
+}
+
+/**
+ * The gate's decision for the session that was just opened in `app`. `short`: the device knows
+ * it's short-form video. Short-form past its goal stops even inside free minutes and grace; free
+ * minutes let you in even past a goal (they don't count toward it); a used-up goal stops a
+ * grace return too.
+ */
+export function decide(s, app, short = false) {
+  const live = s.session;
+  const shortGoal = s.short.max;
+  const isShort = short || Boolean(live?.shortOn);
+  if (isShort && shortGoal !== null && s.short.used >= shortGoal) {
+    return { allow: false, stop: true, text: stopText(s, app, 'short') };
+  }
+  if (live?.free) return { allow: true, stop: false };
+  const goal = s.goals.find((g) => g.apps.includes(app));
+  if (goal && goal.used >= goal.max) return { allow: false, stop: true, text: stopText(s, app, 'goal', goal) };
+  if (live?.cont) return { allow: true, stop: false };
+  return { allow: false, stop: false, text: gateText(s, app) };
+}
+
+const goalName = (g) => g.apps.map(pretty).join(' + ');
+
+function stopText(s, app, why, goal) {
+  const head = why === 'short'
+    ? (s.short.max === 0 ? '⛔ No short-form video. That\'s your goal.' : `⛔ Short-form goal used up: ${Math.round(s.short.used)} of ${s.short.max} min today.`)
+    : `⛔ Over today's goal: ${goalName(goal)} ${Math.round(goal.used)} of ${goal.max} min.`;
+  return [head, `🧠 Mush ${Math.round(s.health)}% · ${s.mood}`, 'Back away. Tomorrow is a new budget.'].join('\n');
 }
 
 // ---------- the prompt text the Shortcut shows ----------
@@ -273,6 +364,7 @@ function gateText(s, app) {
     `🧠 Mush ${Math.round(s.health)}% · ${s.mood}`,
     `${pretty(app)} open #${opens} today. ${mins} min scrolled across all apps.`,
     ...(Object.hasOwn(RULES.freeMinPerDay, app) ? [`Your ${RULES.freeMinPerDay[app]} free minutes are used up for today.`] : []),
+    ...s.goals.filter((g) => g.apps.includes(app)).map((g) => `Goal: ${Math.max(0, Math.round(g.max - g.used))} of ${g.max} min left today (${goalName(g)}).`),
     pick,
     `Rot anyway: nudges at ${RULES.nudgeAfterMin} min; after that each minute costs ${RULES.overstayDrainPerMin}.`,
   ].join('\n');
@@ -305,8 +397,18 @@ export function nudgesDue(live, now, rules = RULES) {
   return { due: freeDue + normal, normal, mins: Math.floor((now - live.origin) / MIN) };
 }
 
+/** Has the live session run past a goal (so it should end now)? Returns the stop text, or null. */
+function stopNow(s, live, now) {
+  if (live.shortOn && s.short.max !== null && s.short.used >= s.short.max) return stopText(s, live.app, 'short');
+  if (now < live.paidFrom) return null; // still in free minutes
+  const goal = s.goals.find((g) => g.apps.includes(live.app));
+  return goal && goal.used >= goal.max ? stopText(s, live.app, 'goal', goal) : null;
+}
+
 function nudgeMessage(s, live, now) {
+  const stop = stopNow(s, live, now);
   const { due, normal, mins } = nudgesDue(live, now);
+  if (stop) return { due, stop: true, title: '⛔ Goal reached', body: stop };
   if (due === 0) return { due: 0 };
   const msg = normal === 0
     ? { title: `🧠 Free ${pretty(live.app)} time's up`, body: `That was your ${RULES.freeMinPerDay[live.app]} free minutes for today. From now on it costs.` }
@@ -323,6 +425,13 @@ async function nudgeTick() {
   const msg = nudgeMessage(s, live, now);
   const { due } = msg;
   const key = `${live.app}@${live.origin}`;
+  if (msg.stop) { // once per run, the moment a goal is crossed
+    if (nudged.get(`${key}:stop`)) return;
+    nudged.set(`${key}:stop`, 1);
+    const results = await push.send({ title: msg.title, body: msg.body.split('\n')[0] + ' Tap to get out.', url: `./?nudge=${encodeURIComponent(live.app ?? '')}` });
+    console.log(`goal stop ${live.app} ->`, results.map((r) => `${r.host} ${r.status}`).join('; '));
+    return;
+  }
   if (due === 0 || (nudged.get(key) ?? 0) >= due) return;
   nudged.set(key, due); // after a restart, this sends the current nudge once rather than every missed one
   if (nudged.size > 50) nudged.delete(nudged.keys().next().value);
@@ -401,12 +510,28 @@ function handle(req, res) {
       return send(res, 200, JSON.stringify({ ...summarize(events, now), opensByApp: undefined }), 'application/json');
 
     case '/api/open': {
+      const short = url.searchParams.get('short') === '1';
       record('open', app, now, dev);
-      const s = summarize(events, now);
-      // Grace or free minutes: 'true' reads as true to a bare "If Contents of URL" (iOS 26) and matches "is true" on older iOS.
-      if (s.session?.cont || s.session?.free) return send(res, 200, 'true');
-      return send(res, 200, gateText(s, app));
+      if (short) record('short', app, now, dev);
+      const d = decide(summarize(events, now), app, short);
+      // The Android app asks for JSON (it can hard-stop); the iPhone Shortcut gets text: 'true' to let
+      // you in (a bare "If Contents of URL" reads it as true on iOS 26), else the prompt.
+      if (url.searchParams.get('fmt') === 'json') return send(res, 200, JSON.stringify(d), 'application/json');
+      return send(res, 200, d.allow ? 'true' : d.text);
     }
+
+    case '/api/short': {
+      // Short-form video started inside the session (the Android app sees it): may stop at once.
+      record('short', app, now, dev);
+      const s = summarize(events, now);
+      const live = s.session?.app === app ? s.session : null;
+      const stop = live && s.short.max !== null && s.short.used >= s.short.max;
+      return send(res, 200, JSON.stringify(stop ? { stop: true, text: stopText(s, app, 'short') } : { stop: false }), 'application/json');
+    }
+
+    case '/api/unshort':
+      record('unshort', app, now, dev);
+      return send(res, 200, 'ok');
 
     case '/api/still':
       // The Android app is sure you're still in it; keeps a long session from hitting the 45-min cap.

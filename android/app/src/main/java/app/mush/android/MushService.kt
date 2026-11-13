@@ -52,6 +52,7 @@ class MushService : AccessibilityService() {
 
     // Short-form inside a gated app.
     private var insideShort = false
+    private var stopShown = false // the goal's hard stop, once per session
     private var insideSnoozeUntil = 0L
 
     private var evalQueued = false
@@ -171,9 +172,12 @@ class MushService : AccessibilityService() {
 
         val gate = rules.gateFor(pkg)?.takeIf { it.app !in (Api.prefs(this).getStringSet("gateOff", null) ?: emptySet()) }
         if (gate != null) {
-            enter(gate.app, pkg, Kind.APP)
+            enter(gate.app, pkg, Kind.APP, short = gate.short)
             val short = !gate.short && gate.scan && (matchesRule(root, pkg, h) || (videoCounts(pkg) && Detector.uprightVideo(root, h, rules.videoMinHeight)))
-            if (short) shortInside(gate.app) else insideShort = false
+            if (short) shortInside(gate.app) else if (insideShort) {
+                insideShort = false
+                Backend.get(this).record("unshort", gate.app)
+            }
             return
         }
         val app = when {
@@ -182,7 +186,7 @@ class MushService : AccessibilityService() {
             videoCounts(pkg) && audioPlaying() && Detector.uprightVideo(root, h, rules.videoMinHeight) -> appName(pkg)
             else -> null
         }
-        if (app != null) enter(app, pkg, Kind.VIDEO) else leaveSoon()
+        if (app != null) enter(app, pkg, Kind.VIDEO, short = true) else leaveSoon()
     }
 
     private fun matchesRule(root: AccessibilityNodeInfo, pkg: String, h: Int) =
@@ -250,7 +254,7 @@ class MushService : AccessibilityService() {
         }
     }
 
-    private fun enter(app: String, pkg: String, kind: Kind) {
+    private fun enter(app: String, pkg: String, kind: Kind, short: Boolean) {
         exitPending?.let { main.removeCallbacks(it) }
         exitPending = null
         if (activeApp == app) { activePkg = pkg; return }
@@ -259,14 +263,16 @@ class MushService : AccessibilityService() {
         activeKind = kind
         activePkg = pkg
         insideShort = false
+        stopShown = false
         val now = SystemClock.uptimeMillis()
         nudgesShown = if (app == lastExitApp && now - lastExitAt < REENTER_MS) lastExitNudges else 0
         status("In $app ($pkg)")
-        Backend.get(this).open(app) { body ->
+        Backend.get(this).open(app, short) { d ->
             if (activeApp != app) return@open
             when {
-                body == null -> gate(app, kind, "Mush can't reach its server (is Tailscale on?), but it still saw you.")
-                body.trim() != "true" -> gate(app, kind, body.trim())
+                d == null -> gate(app, kind, "Mush can't reach your server (is your VPN on?), but it still saw you.")
+                d.stop -> hardStop(app, kind, d.text ?: "⛔ Over today's goal.")
+                !d.allow -> gate(app, kind, d.text ?: "")
             }
         }
         main.removeCallbacks(poll)
@@ -310,11 +316,34 @@ class MushService : AccessibilityService() {
         )
     }
 
+    /** A goal is used up: Back away is the only way on (and "This isn't video" where the watch could be wrong). */
+    private fun hardStop(app: String, kind: Kind, text: String) {
+        stopShown = true
+        val pkg = activePkg
+        overlay.show(text, "Back away", null,
+            onPrimary = { backAway(app) },
+            onSecondary = {},
+            tertiary = if (kind == Kind.VIDEO && pkg != null) "This isn't video" else null,
+            onTertiary = { if (pkg != null) notVideo(pkg) },
+        )
+    }
+
     /** Short-form started inside a gated app you're already in (Reels inside Facebook). */
     private fun shortInside(app: String) {
         if (insideShort) return // already handled this stretch of video
         insideShort = true
-        if (SystemClock.uptimeMillis() < insideSnoozeUntil || overlay.showing) return
+        Backend.get(this).short(app) { stop ->
+            if (activeApp != app || !insideShort) return@short
+            if (stop != null) {
+                stopShown = true
+                overlay.show(stop, "Back away", null, onPrimary = { performGlobalAction(GLOBAL_ACTION_HOME) }, onSecondary = {})
+            } else if (SystemClock.uptimeMillis() >= insideSnoozeUntil && !overlay.showing) {
+                showInsidePrompt(app)
+            }
+        }
+    }
+
+    private fun showInsidePrompt(app: String) {
         overlay.show("Short-form video.\n\nThis is the part that rots you.", "Back away", "Keep watching",
             // You were already in the app: leaving records a close; the back-away refund is for the gate at the door.
             onPrimary = { performGlobalAction(GLOBAL_ACTION_HOME) },
@@ -342,6 +371,13 @@ class MushService : AccessibilityService() {
         val app = activeApp ?: return
         Backend.get(this).nudge(app) { o ->
             if (o == null || activeApp != app) return@nudge
+            if (o.optBoolean("stop")) { // crossed a goal mid-session: the only way on is out
+                if (!stopShown) {
+                    stopShown = true
+                    overlay.show(o.optString("body"), "Get out", null, onPrimary = { performGlobalAction(GLOBAL_ACTION_HOME) }, onSecondary = {})
+                }
+                return@nudge
+            }
             val due = o.optInt("due", 0)
             if (due <= nudgesShown) return@nudge
             nudgesShown = due

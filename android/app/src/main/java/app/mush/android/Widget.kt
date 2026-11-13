@@ -50,6 +50,12 @@ class Widget : AppWidgetProvider() {
                 views.setTextViewText(R.id.widget_pct, "${Math.round(health)}%")
                 views.setTextViewText(R.id.widget_mood, state!!.optString("mood"))
                 views.setImageViewBitmap(R.id.widget_brain, BrainArt.draw(health, 240))
+                val (today, pace) = paceLines(state)
+                views.setTextViewText(R.id.widget_today, today)
+                views.setTextViewText(R.id.widget_pace, pace)
+                val (goal, over) = goalLine(state)
+                views.setTextViewText(R.id.widget_goal, goal)
+                views.setTextColor(R.id.widget_goal, if (over) Color.rgb(0xff, 0x8a, 0x73) else Color.rgb(0xa5, 0x9c, 0xb1))
             }
             val open = PendingIntent.getActivity(ctx, 0, Intent(ctx, MainActivity::class.java),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
@@ -57,6 +63,45 @@ class Widget : AppWidgetProvider() {
             mgr.updateAppWidget(ids, views)
         }
     }
+}
+
+/** "34 min today" and how that compares with the last 7 days at this time of day. */
+internal fun paceLines(state: JSONObject): Pair<String, String> {
+    val pace = state.optJSONObject("pace")
+    val today = pace?.optDouble("today") ?: state.optJSONObject("today")?.optDouble("minutes") ?: 0.0
+    val avg = pace?.optDouble("avg", Double.NaN) ?: Double.NaN
+    val diff = Math.round(today - avg)
+    val line = when {
+        avg.isNaN() -> "pace: needs a day of history"
+        diff == 0L -> "right on your 7-day pace"
+        diff < 0 -> "${-diff} min under your 7-day pace"
+        else -> "$diff min over your 7-day pace"
+    }
+    return "${Math.round(today)} min scrolled today" to line
+}
+
+/** "Goal 12 / 30 min · short-form 0" and whether anything is over. */
+internal fun goalLine(state: JSONObject): Pair<String, Boolean> {
+    val parts = mutableListOf<String>()
+    var over = false
+    state.optJSONArray("goals")?.let { arr ->
+        for (i in 0 until arr.length()) {
+            val g = arr.getJSONObject(i)
+            val used = g.optDouble("used")
+            val max = g.optDouble("max")
+            if (used >= max) over = true
+            parts += "goal ${Math.round(used)} / ${Math.round(max)} min"
+        }
+    }
+    state.optJSONObject("short")?.let { sh ->
+        if (!sh.isNull("max")) {
+            val used = sh.optDouble("used")
+            val max = sh.optDouble("max")
+            if (used > max || (max == 0.0 && used > 0.0)) over = true
+            parts += "short-form ${Math.round(used)}${if (max > 0) " / ${Math.round(max)}" else ""} min"
+        }
+    }
+    return parts.joinToString(" · ") to over
 }
 
 /** A native drawing of the brain (the web pages draw the same one in SVG, public/brain.js). */

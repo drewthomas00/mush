@@ -54,6 +54,15 @@
   .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
   .tile b { display: block; font-size: 28px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
   .tile span { color: var(--muted); font-size: 13px; }
+  .pace { margin-top: 12px; font-size: 15px; color: var(--muted); }
+  .pace b { color: var(--ink); }
+  .goal { margin-top: 12px; }
+  .goal .row { display: flex; justify-content: space-between; font-size: 15px; }
+  .goal .row span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .goal .over span:last-child { color: var(--bad); font-weight: 700; }
+  .goal .bar { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; margin-top: 6px; }
+  .goal .bar i { display: block; height: 100%; border-radius: 99px; background: var(--good); }
+  .goal .over .bar i, .goal .bar i.over { background: var(--bad); }
   .apps { margin-top: 12px; display: grid; gap: 6px; }
   .apps div { display: flex; justify-content: space-between; font-size: 15px; }
   .apps span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -109,6 +118,8 @@
       <div class="tile"><b id="tOpens">0</b><span>opens</span></div>
       <div class="tile"><b id="tResist">0</b><span>backed away</span></div>
     </div>
+    <div class="pace" id="pace"></div>
+    <div id="goals"></div>
     <div class="apps" id="apps"></div>
   </section>
 
@@ -168,6 +179,26 @@ function render(s) {
   $('tMin').textContent = Math.round(s.today.minutes);
   $('tOpens').textContent = s.today.opens;
   $('tResist').textContent = s.today.resisted;
+  // Pace: today so far against the last 7 days up to this time of day.
+  const p = s.pace;
+  if (p && p.avg !== null && p.avg !== undefined) {
+    const diff = Math.round(p.today - p.avg);
+    $('pace').innerHTML = diff === 0 ? 'Right on your 7-day pace.'
+      : `<b>${Math.abs(diff)} min ${diff < 0 ? 'under' : 'over'}</b> your 7-day pace for this time of day (${Math.round(p.avg)} min).`;
+  } else $('pace').textContent = p ? 'Your 7-day pace shows up after a day of history.' : '';
+  // Goals: a bar per budget, and short-form.
+  const bars = (s.goals ?? []).map((g) => {
+    const over = g.used >= g.max;
+    return `<div class="goal"><div class="row ${over ? 'over' : ''}"><span>Goal: ${esc(g.apps.map(pretty).join(' + '))}</span>
+      <span>${Math.round(g.used)} / ${g.max} min</span></div>
+      <div class="bar"><i class="${over ? 'over' : ''}" style="width:${Math.min(100, (g.used / Math.max(g.max, 1)) * 100)}%"></i></div></div>`;
+  });
+  if (s.short && s.short.max !== null && s.short.max !== undefined) {
+    const over = s.short.max === 0 ? s.short.used > 0 : s.short.used >= s.short.max;
+    bars.push(`<div class="goal"><div class="row ${over ? 'over' : ''}"><span>Short-form video</span>
+      <span>${Math.round(s.short.used)}${s.short.max > 0 ? ' / ' + s.short.max : ''} min${s.short.max === 0 && !over ? ' ✓' : ''}</span></div></div>`);
+  }
+  $('goals').innerHTML = bars.join('');
   $('apps').innerHTML = Object.entries(s.appsToday).sort((a, b) => b[1] - a[1])
     .map(([a, m]) => `<div><span>${esc(pretty(a))}</span><span>${fmtMin(m)}</span></div>`).join('');
 

@@ -22,7 +22,7 @@
         android:layout_height="wrap_content"
         android:text="–"
         android:textColor="#f3eef7"
-        android:textSize="22sp"
+        android:textSize="20sp"
         android:textStyle="bold" />
 
     <TextView
@@ -31,5 +31,31 @@
         android:layout_height="wrap_content"
         android:text=""
         android:textColor="#a59cb1"
-        android:textSize="13sp" />
+        android:textSize="12sp" />
+
+    <TextView
+        android:id="@+id/widget_today"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text=""
+        android:textColor="#f3eef7"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/widget_pace"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textColor="#a59cb1"
+        android:textSize="11sp" />
+
+    <TextView
+        android:id="@+id/widget_goal"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textColor="#a59cb1"
+        android:textSize="11sp" />
 </LinearLayout>

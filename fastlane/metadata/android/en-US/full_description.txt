@@ -5,7 +5,8 @@
 <li><b>Short-form video anywhere.</b> Any upright video filling the screen (Reels, Shorts, TikTok, Stories) gets the same prompt, in any app. Inside a gated app you've let yourself into, starting Reels brings the brain back.</li>
 <li><b>Nudges.</b> Stay, and the brain covers the screen again at 5 minutes and every 3 after that, and from the first nudge every minute costs double.</li>
 <li><b>Free minutes.</b> Give an app some minutes a day with no prompt, no cost and no nudges.</li>
-<li><b>Widget.</b> Your brain on the home screen.</li>
+<li><b>Goals.</b> A daily budget shared by the apps you pick, and optionally no short-form video at all. When a goal is used up, the prompt only offers "Back away".</li>
+<li><b>Widget.</b> Your brain on the home screen, with today's scrolling and whether you're ahead of or behind your 7-day pace for this time of day.</li>
 <li><b>One brain across devices</b>, if you want it: connect your own Mush server (open source, one file) and your phones, including an iPhone, share it.</li>
 </ul>
 

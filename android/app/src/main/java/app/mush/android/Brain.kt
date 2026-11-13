@@ -22,7 +22,13 @@ data class BrainRules(
     val nudgeEveryMin: Double = 3.0,
     val overstayDrainPerMin: Double = 2.0,
     val freeMinPerDay: Map<String, Double> = emptyMap(),
+    val goals: List<Goal> = emptyList(),        // at the max, the gate is a hard stop
+    val shortMax: Double? = null,               // daily minutes of short-form allowed; 0 = none; null = no goal
+    val shortApps: Set<String> = setOf("tiktok"), // short-form through and through
 )
+
+/** A daily budget of paid minutes (free minutes don't count) shared by these apps. */
+data class Goal(val apps: Set<String>, val max: Double)
 
 data class Event(val t: Long, val type: String, val app: String?)
 
@@ -36,11 +42,17 @@ data class Session(
     val free: Boolean = false,
     val paidFrom: Long = start,
     val live: Boolean = false,
+    val shortMs: Long = 0,
+    val shortOn: Boolean = false,
 )
 
 class Replayed(val health: Double, val session: Session?, val sessions: List<Session>)
 
 data class Day(val date: String, var minutes: Double = 0.0, var opens: Int = 0, var resisted: Int = 0)
+
+class GoalUse(val goal: Goal, val used: Double)
+class Pace(val today: Double, val avg: Double?, val days: Int)
+class Decision(val allow: Boolean, val stop: Boolean, val text: String?)
 
 class Summary(
     val health: Double,
@@ -52,6 +64,10 @@ class Summary(
     val days: List<Day>,
     val recent: List<Session>,
     val now: Long,
+    val goals: List<GoalUse>,
+    val shortUsed: Double,
+    val shortMax: Double?,
+    val pace: Pace,
 )
 
 data class Nudge(val due: Int, val normal: Int, val mins: Int)
@@ -67,6 +83,7 @@ object Brain {
     private class Live(
         val app: String?, val start: Long, val origin: Long, val paidFrom: Long, var capBase: Long,
         var rot: Boolean, val cont: Boolean, val free: Boolean,
+        var shortFrom: Long? = null, var shortMs: Long = 0,
     )
 
     fun replay(evs: List<Event>, now: Long, rules: BrainRules = BrainRules(), zone: ZoneId = ZoneId.systemDefault()): Replayed {
@@ -106,7 +123,8 @@ object Brain {
         fun endSession(t: Long, resisted: Boolean = false) {
             val s = session ?: return
             val end = minOf(t, s.capBase + cap)
-            sessions += Session(s.app, s.start, s.origin, end, resisted, s.cont, s.free, s.paidFrom)
+            val shortMs = s.shortMs + (s.shortFrom?.let { maxOf(0L, end - it) } ?: 0L)
+            sessions += Session(s.app, s.start, s.origin, end, resisted, s.cont, s.free, s.paidFrom, shortMs = shortMs)
             val usedFree = minOf(end, s.paidFrom) - s.start
             if (usedFree > 0) {
                 val k = "${s.app}|${dayKey(s.start, zone)}"
@@ -125,13 +143,26 @@ object Brain {
                     if (session != null) endSession(ev.t)
                     val cont = inGrace(ev.app, ev.t) // coming back to a session you chose: no prompt, no cost
                     val left = freeLeft(ev.app, ev.t)
-                    session = Live(ev.app, ev.t, if (cont) graceOrigin[ev.app] ?: ev.t else ev.t, ev.t + left, ev.t, cont, cont, left > 0)
+                    session = Live(ev.app, ev.t, if (cont) graceOrigin[ev.app] ?: ev.t else ev.t, ev.t + left, ev.t, cont, cont, left > 0,
+                        shortFrom = if (ev.app in rules.shortApps) ev.t else null)
                     if (!cont && left == 0L) h = clamp(h - rules.openCost)
                 }
                 "still" -> {
                     // Only while the session is still within its cap: a late heartbeat must not revive one that ended.
                     val s = session
                     if (s != null && s.app == ev.app && ev.t < s.capBase + cap) s.capBase = maxOf(s.capBase, ev.t)
+                }
+                "short" -> {
+                    val s = session
+                    if (s != null && s.app == ev.app && s.shortFrom == null && ev.t < s.capBase + cap) s.shortFrom = ev.t
+                }
+                "unshort" -> {
+                    val s = session
+                    val from = s?.shortFrom
+                    if (s != null && s.app == ev.app && from != null) {
+                        s.shortMs += maxOf(0L, minOf(ev.t, s.capBase + cap) - from)
+                        s.shortFrom = null
+                    }
                 }
                 "close" -> if (session?.app == ev.app && session != null) endSession(ev.t)
                 "resist" -> {
@@ -174,7 +205,10 @@ object Brain {
         var live: Session? = null
         session?.let { s ->
             val capEnd = s.capBase + cap
-            val capped = Session(s.app, s.start, s.origin, minOf(now, capEnd), false, s.cont, s.free, s.paidFrom, live = now < capEnd)
+            val end = minOf(now, capEnd)
+            val shortMs = s.shortMs + (s.shortFrom?.let { maxOf(0L, end - it) } ?: 0L)
+            val capped = Session(s.app, s.start, s.origin, end, false, s.cont, s.free, s.paidFrom, live = now < capEnd,
+                shortMs = shortMs, shortOn = s.shortFrom != null && now < capEnd)
             if (now < capEnd) live = capped
             sessions += capped // past the cap it is over, whether or not a close ever arrives
         }
@@ -207,10 +241,30 @@ object Brain {
         }
         val minutesByApp = LinkedHashMap<String?, Double>()
         val opensByApp = LinkedHashMap<String?, Int>()
+        val paidByApp = HashMap<String?, Double>() // minutes past the free ones, which is what goals count
+        var shortToday = 0.0
         for (s in r.sessions) {
             if (dayKey(s.start, zone) != today.toString()) continue
             minutesByApp[s.app] = (minutesByApp[s.app] ?: 0.0) + (s.end - s.start) / MIN
             if (!s.cont) opensByApp[s.app] = (opensByApp[s.app] ?: 0) + 1
+            val paidFrom = minOf(maxOf(s.paidFrom, s.start), s.end)
+            paidByApp[s.app] = (paidByApp[s.app] ?: 0.0) + (s.end - paidFrom) / MIN
+            shortToday += s.shortMs / MIN
+        }
+        val goals = rules.goals.map { g -> GoalUse(g, g.apps.sumOf { paidByApp[it] ?: 0.0 }) }
+
+        // Pace: today so far against the average of the last 7 days up to the same time of day.
+        val midnight = today.atStartOfDay(zone).toInstant().toEpochMilli()
+        val sinceMidnight = now - midnight
+        val first = evs.minOfOrNull { it.t } ?: now
+        var paceSum = 0.0
+        var paceDays = 0
+        for (d in 1..7) {
+            val from = today.minusDays(d.toLong()).atStartOfDay(zone).toInstant().toEpochMilli()
+            if (from + HOUR.toLong() * 24 <= first) break // Mush wasn't in use yet that day
+            val to = from + sinceMidnight
+            for (s in r.sessions) paceSum += maxOf(0L, minOf(s.end, to) - maxOf(s.start, from)) / MIN
+            paceDays++
         }
         return Summary(
             health = Math.round(r.health * 10) / 10.0,
@@ -222,7 +276,53 @@ object Brain {
             days = last14,
             recent = r.sessions.takeLast(12).reversed(),
             now = now,
+            goals = goals,
+            shortUsed = shortToday,
+            shortMax = rules.shortMax,
+            pace = Pace(last14.last().minutes, if (paceDays > 0) paceSum / paceDays else null, paceDays),
         )
+    }
+
+    /**
+     * The gate's decision for the session just opened in `app`. `short`: the device knows it's
+     * short-form. Short-form past its goal stops even in free minutes and grace; free minutes let
+     * you in past a goal (they don't count toward it); a used-up goal stops a grace return too.
+     */
+    fun decide(s: Summary, app: String?, short: Boolean = false, rules: BrainRules = BrainRules()): Decision {
+        val live = s.session
+        val isShort = short || live?.shortOn == true
+        val shortMax = s.shortMax
+        if (isShort && shortMax != null && s.shortUsed >= shortMax) return Decision(false, true, stopText(s, "short", null))
+        if (live?.free == true) return Decision(true, false, null)
+        val goal = s.goals.firstOrNull { app in it.goal.apps }
+        if (goal != null && goal.used >= goal.goal.max) return Decision(false, true, stopText(s, "goal", goal))
+        if (live?.cont == true) return Decision(true, false, null)
+        return Decision(false, false, gateText(s, app, rules))
+    }
+
+    /** Short-form started inside the live session: the stop text if that's past the goal, else null. */
+    fun shortStop(s: Summary, app: String?): String? {
+        val max = s.shortMax ?: return null
+        return if (s.session?.app == app && s.shortUsed >= max) stopText(s, "short", null) else null
+    }
+
+    private fun goalName(g: Goal) = g.apps.sorted().joinToString(" + ") { pretty(it) }
+
+    fun stopText(s: Summary, why: String, goal: GoalUse?): String {
+        val head = if (why == "short") {
+            if (s.shortMax == 0.0) "⛔ No short-form video. That's your goal."
+            else "⛔ Short-form goal used up: ${Math.round(s.shortUsed)} of ${s.shortMax?.toInt()} min today."
+        } else "⛔ Over today's goal: ${goalName(goal!!.goal)} ${Math.round(goal.used)} of ${goal.goal.max.toInt()} min."
+        return listOf(head, "🧠 Mush ${Math.round(s.health)}% · ${s.mood}", "Back away. Tomorrow is a new budget.").joinToString("\n")
+    }
+
+    /** Has the live session run past a goal, so it should end now? The stop text, or null. */
+    fun stopNow(s: Summary, live: Session, now: Long): String? {
+        val shortMax = s.shortMax
+        if (live.shortOn && shortMax != null && s.shortUsed >= shortMax) return stopText(s, "short", null)
+        if (now < live.paidFrom) return null // still in free minutes
+        val goal = s.goals.firstOrNull { live.app in it.goal.apps } ?: return null
+        return if (goal.used >= goal.goal.max) stopText(s, "goal", goal) else null
     }
 
     /** How many nudges a live session is owed by `now`. */
@@ -263,6 +363,9 @@ object Brain {
             "${pretty(app)} open #$opens today. ${Math.round(s.today.minutes)} min scrolled across all apps.",
         )
         rules.freeMinPerDay[app]?.let { out += "Your ${it.toInt()} free minutes are used up for today." }
+        s.goals.filter { app in it.goal.apps }.forEach {
+            out += "Goal: ${maxOf(0L, Math.round(it.goal.max - it.used))} of ${it.goal.max.toInt()} min left today (${goalName(it.goal)})."
+        }
         out += lines[s.today.opens % lines.size]
         out += "Rot anyway: nudges at ${rules.nudgeAfterMin.toInt()} min; after that each minute costs ${rules.overstayDrainPerMin.toInt()}."
         return out.joinToString("\n")
