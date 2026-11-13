@@ -1,0 +1,1 @@
+First public release: gated apps, short-form video detection in every app, nudges, free minutes, home-screen widget, and an optional self-hosted server to share one brain across devices.

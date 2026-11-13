@@ -1,0 +1,32 @@
+{
+  "version": 3,
+  "note": "gate: apps that get the Back away / Rot anyway prompt as soon as they open (like the iPhone automations); short:true means the whole app is short-form, so no second prompt inside it; scan:false turns off the video watch inside it (Snapchat opens on the camera). video: the global watch, in every other app, for an upright video at least minHeight of the screen tall; ignore lists apps where a full-screen upright surface isn't short-form (calls, maps, cameras, galleries). Camera apps and apps marked as games are skipped on the phone automatically. rules: extra screen matches by view id (mode ids) or whole app (mode app); older app versions read only this. Tune from data/dumps/.",
+  "gate": [
+    { "pkg": "com.facebook.katana", "app": "facebook" },
+    { "pkg": "com.instagram.android", "app": "instagram" },
+    { "pkg": "com.zhiliaoapp.musically", "app": "tiktok", "short": true },
+    { "pkg": "com.ss.android.ugc.trill", "app": "tiktok", "short": true },
+    { "pkg": "com.google.android.youtube", "app": "youtube" },
+    { "pkg": "com.reddit.frontpage", "app": "reddit" },
+    { "pkg": "com.twitter.android", "app": "x" },
+    { "pkg": "com.snapchat.android", "app": "snapchat", "scan": false },
+    { "pkg": "com.linkedin.android", "app": "linkedin" }
+  ],
+  "video": {
+    "minHeight": 0.7,
+    "ignore": [
+      "com.whatsapp", "com.whatsapp.w4b", "org.thoughtcrime.securesms", "com.facebook.orca", "org.telegram.messenger",
+      "com.google.android.apps.tachyon", "com.google.android.apps.meetings", "us.zoom.videomeetings", "com.microsoft.teams",
+      "com.skype.raider", "com.discord", "com.google.android.apps.maps", "com.waze", "app.organicmaps", "net.osmand",
+      "com.google.android.apps.photos", "com.motorola.MotGallery2", "app.grapheneos.gallery", "com.android.gallery3d",
+      "app.grapheneos.camera", "com.motorola.camera3", "com.motorola.camera2", "com.android.camera2"
+    ]
+  },
+  "rules": [
+    { "pkg": "com.zhiliaoapp.musically", "app": "tiktok", "mode": "app" },
+    { "pkg": "com.ss.android.ugc.trill", "app": "tiktok", "mode": "app" },
+    { "pkg": "com.google.android.youtube", "app": "youtube", "mode": "ids", "ids": ["reel_recycler", "reel_player", "reel_watch", "shorts_player"] },
+    { "pkg": "com.instagram.android", "app": "instagram", "mode": "ids", "ids": ["clips_viewer", "clips_video", "clips_ufi"] }
+  ],
+  "capture": ["com.google.android.youtube", "com.instagram.android", "com.facebook.katana", "com.snapchat.android", "com.zhiliaoapp.musically", "com.ss.android.ugc.trill", "com.reddit.frontpage", "com.twitter.android", "com.linkedin.android"]
+}

@@ -1,0 +1,54 @@
+name: release
+
+# Push a tag vX.Y.Z (matching versionName in android/app/build.gradle.kts) to publish a GitHub
+# release with the signed APK.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Version matches the tag
+        run: |
+          name=$(grep -oP 'versionName = "\K[^"]+' android/app/build.gradle.kts)
+          test "v$name" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME but versionName $name"; exit 1; }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - run: node tools/check.mjs
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.MUSH_KEYSTORE_B64 }}
+        run: |
+          test -n "$KEYSTORE_B64" || { echo "MUSH_KEYSTORE_B64 secret is missing"; exit 1; }
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/mush.p12"
+      - name: Test and build
+        env:
+          MUSH_KEYSTORE: ${{ runner.temp }}/mush.p12
+          MUSH_KEYSTORE_PASSWORD: ${{ secrets.MUSH_KEYSTORE_PASSWORD }}
+        run: gradle -p android testDebugUnitTest assembleRelease --no-daemon --stacktrace
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rm -f "$RUNNER_TEMP/mush.p12"
+          cp android/app/build/outputs/apk/release/app-release.apk "mush-${GITHUB_REF_NAME}.apk"
+          sha256sum "mush-${GITHUB_REF_NAME}.apk" > "mush-${GITHUB_REF_NAME}.apk.sha256"
+          code=$(grep -oP 'versionCode = \K[0-9]+' android/app/build.gradle.kts)
+          notes="fastlane/metadata/android/en-US/changelogs/${code}.txt"
+          gh release create "$GITHUB_REF_NAME" "mush-${GITHUB_REF_NAME}.apk" "mush-${GITHUB_REF_NAME}.apk.sha256" \
+            --title "Mush ${GITHUB_REF_NAME}" --notes-file "$notes"

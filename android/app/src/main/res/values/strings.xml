@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="a11y_description">Mush watches for short-form video (Reels, Shorts, TikTok) and puts your brain in front of it. It looks at which screen an app is showing, never at what you type, and keeps only app names and times: on your phone, or on your own Mush server if you connect one.</string>
+    <string name="widget_description">Your Mush brain at a glance.</string>
+</resources>

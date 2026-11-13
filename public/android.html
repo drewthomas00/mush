@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mush Android</title>
+<link rel="icon" href="icon-512.png">
+<style>
+  :root { --bg: #fbf7f4; --card: #fff; --ink: #231d2b; --muted: #776f80; --line: #ece4de; --accent: #d9577f; color-scheme: light; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #17141f; --card: #221d2c; --ink: #f3eef7; --muted: #a59cb1; --line: #322b3e; --accent: #ff93b6; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --bg: #17141f; --card: #221d2c; --ink: #f3eef7; --muted: #a59cb1; --line: #322b3e; --accent: #ff93b6; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, sans-serif; padding: 16px 16px 40px; }
+  main { max-width: 620px; margin: 0 auto; }
+  header { display: flex; justify-content: space-between; align-items: center; }
+  h1 { font-size: 20px; margin: 0; }
+  a { color: var(--accent); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 16px; margin-top: 16px; }
+  h2 { font-size: 18px; margin: 0 0 8px; }
+  ol { padding-left: 22px; margin: 8px 0 0; } li { margin: 6px 0; }
+  .muted { color: var(--muted); font-size: 15px; }
+  .dl { display: inline-block; margin-top: 8px; padding: 12px 18px; border-radius: 12px; background: var(--accent); color: #fff; font-weight: 700; text-decoration: none; }
+  b.ui { font-weight: 700; }
+</style>
+</head>
+<body>
+<main>
+  <header><h1>Mush for Android</h1><a href="./">← Brain</a></header>
+
+  <section class="card">
+    <h2>What it does</h2>
+    <p class="muted">Two ways in, one brain (the same one as your iPhone):</p>
+    <ol>
+      <li><b class="ui">Gated apps</b> (Facebook, Instagram, TikTok, YouTube, Reddit, X, Snapchat, LinkedIn) get Back away / Rot anyway the moment they open. LinkedIn's free minutes and the grace window work as on the iPhone.</li>
+      <li><b class="ui">Short-form video anywhere</b>: an upright video filling the screen gets the same prompt, in any app. Inside a gated app you let yourself into, starting Reels brings the brain back.</li>
+    </ol>
+    <p class="muted">Stay, and it comes back at 5 minutes and every 3 after that, full screen. Cameras, video calls, maps and games are skipped; if it ever gets one wrong, tap <b class="ui">This isn't video</b> (undo in Setup).</p>
+  </section>
+
+  <section class="card">
+    <h2>Install</h2>
+    <ol>
+      <li>Install <b class="ui">Tailscale</b> on the phone and sign in (GrapheneOS: from F-Droid or Accrescent; it needs no Google services).</li>
+      <li><a class="dl" id="dl" href="android/mush.apk">Download Mush.apk</a> <span class="muted" id="ver"></span></li>
+      <li>Open the download. When Android asks, allow your browser to <b class="ui">install unknown apps</b>.</li>
+      <li>Android blocks Accessibility for downloaded apps until you allow it: <b class="ui">Settings → Apps → Mush → ⋮ (top right) → Allow restricted settings</b>.</li>
+      <li>Open Mush, tap <b class="ui">Setup</b> → <b class="ui">Turn on Mush</b>. In Accessibility, pick <b class="ui">Mush</b> and switch it on.</li>
+      <li>Tap <b class="ui">Test the brain</b> in Setup to check the overlay shows.</li>
+    </ol>
+    <p class="muted">Motorola: if Mush stops reacting after a while, set Settings → Apps → Mush → Battery to <b class="ui">Unrestricted</b>.</p>
+  </section>
+
+  <section class="card">
+    <h2>Teaching it your apps</h2>
+    <p class="muted">Apps change their screens, so Mush's rules for spotting Reels and Shorts live on the server and update without reinstalling. If one isn't caught, turn on <b class="ui">Capture screens</b> in the Mush app, spend a minute in that app's normal feed and its short-video feed, then turn it off. Mush sends the names of the screen's building blocks and short button labels like “Shorts” to your server, never posts, messages or what you type, and the rules get tuned from that.</p>
+  </section>
+</main>
+<script>
+fetch('android/version.json', { cache: 'no-store' }).then((r) => r.ok ? r.json() : null).then((v) => {
+  document.getElementById('ver').textContent = v ? `version ${v.versionName}` : '(not built yet)';
+}).catch(() => {});
+</script>
+</body>
+</html>

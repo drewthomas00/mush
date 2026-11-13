@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mush Overlay</title>
+<link rel="stylesheet" href="brain.css">
+<style>
+  :root { --bg: #17141f; --ink: #f3eef7; --muted: #a59cb1; color-scheme: dark; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.3 system-ui, sans-serif; text-align: center; overflow: hidden; }
+  #brain svg { width: min(70vw, 46vh, 280px); height: auto; display: block; margin: 8px auto 0; overflow: visible; }
+  .pct { font-size: 48px; font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+  .mood { color: var(--muted); font-size: 18px; text-transform: capitalize; }
+</style>
+</head>
+<body>
+<div id="brain"></div>
+<div class="pct" id="pct"></div>
+<div class="mood" id="mood"></div>
+<script src="brain.js"></script>
+<script>
+// The Android app draws its own text and buttons below this; this page is only the brain.
+fetch('api/state', { cache: 'no-store' }).then((r) => r.json()).then((s) => {
+  document.getElementById('brain').innerHTML = brainSVG(s.health);
+  document.getElementById('pct').textContent = Math.round(s.health) + '%';
+  document.getElementById('mood').textContent = s.mood;
+}).catch(() => { document.getElementById('mood').textContent = "can't reach Mush"; });
+</script>
+</body>
+</html>

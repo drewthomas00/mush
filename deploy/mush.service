@@ -1,0 +1,17 @@
+[Unit]
+Description=Mush (the doomscroll brain)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/apps/mush
+ExecStart=%h/.local/bin/node %h/apps/mush/server.mjs
+Environment=PORT=8473
+Environment=HOST=127.0.0.1
+Restart=always
+RestartSec=5
+CPUWeight=20
+MemoryMax=128M
+
+[Install]
+WantedBy=default.target

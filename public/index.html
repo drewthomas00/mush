@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mush</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Mush">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#17141f">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-512.png">
+<link rel="stylesheet" href="brain.css">
+<style>
+  :root {
+    --bg: #fbf7f4; --card: #ffffff; --ink: #231d2b; --muted: #776f80; --line: #ece4de;
+    --good: #2f9e6e; --bad: #d4513b; --bar: #e48aa8; --bar-over: #b9ae73;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17141f; --card: #221d2c; --ink: #f3eef7; --muted: #a59cb1; --line: #322b3e;
+      --good: #5fd3a0; --bad: #ff8a73; --bar: #e48aa8; --bar-over: #b9ae73;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17141f; --card: #221d2c; --ink: #f3eef7; --muted: #a59cb1; --line: #322b3e;
+    --good: #5fd3a0; --bad: #ff8a73; --bar: #e48aa8; --bar-over: #b9ae73;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.4 ui-rounded, "SF Pro Rounded", system-ui, -apple-system, sans-serif;
+    padding: calc(env(safe-area-inset-top) + 12px) 16px calc(env(safe-area-inset-bottom) + 32px);
+  }
+  main { max-width: 520px; margin: 0 auto; }
+  header { display: flex; justify-content: space-between; align-items: center; }
+  header h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+  header a { color: var(--muted); text-decoration: none; font-size: 15px; }
+  .hero { text-align: center; padding: 4px 0 8px; }
+  .hero svg { width: min(78vw, 300px); height: auto; display: block; margin: 0 auto; overflow: visible; }
+  .pct { font-size: 56px; font-weight: 800; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .mood { font-size: 18px; color: var(--muted); margin-top: 4px; text-transform: capitalize; }
+  .meter { height: 10px; border-radius: 99px; background: var(--line); overflow: hidden; margin: 14px auto 0; max-width: 300px; }
+  .meter > i { display: block; height: 100%; border-radius: 99px; transition: width .6s ease, background .6s ease; }
+  .live { margin: 16px 0 0; padding: 12px 14px; border-radius: 14px; background: color-mix(in srgb, var(--bad) 14%, var(--card)); color: var(--ink); font-weight: 600; text-align: center; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 16px; margin-top: 16px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; font-weight: 700; }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .tile b { display: block; font-size: 28px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .tile span { color: var(--muted); font-size: 13px; }
+  .apps { margin-top: 12px; display: grid; gap: 6px; }
+  .apps div { display: flex; justify-content: space-between; font-size: 15px; }
+  .apps span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .chart { position: relative; display: grid; grid-template-columns: repeat(14, 1fr); gap: 4px; align-items: end; height: 120px; }
+  .chart .col { display: flex; flex-direction: column; justify-content: flex-end; height: 100%; }
+  .chart .col i { display: block; border-radius: 5px 5px 2px 2px; background: var(--bar); min-height: 2px; }
+  .chart .col i.over { background: var(--bar-over); }
+  .chart .even { position: absolute; left: 0; right: 0; border-top: 1.5px dashed var(--muted); opacity: .55; pointer-events: none; }
+  .chart .even span { position: absolute; right: 0; top: -18px; font-size: 11px; color: var(--muted); }
+  .days { display: grid; grid-template-columns: repeat(14, 1fr); gap: 4px; margin-top: 6px; text-align: center; font-size: 11px; color: var(--muted); }
+  .days .today { color: var(--ink); font-weight: 700; }
+  ul.recent { list-style: none; margin: 0; padding: 0; }
+  ul.recent li { display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid var(--line); font-size: 15px; }
+  ul.recent li:first-child { border-top: 0; padding-top: 0; }
+  ul.recent .r { color: var(--muted); font-variant-numeric: tabular-nums; }
+  ul.recent .win { color: var(--good); font-weight: 600; }
+  .rules { color: var(--muted); font-size: 14px; }
+  .rules p { margin: 0 0 6px; }
+  .empty { color: var(--muted); font-size: 15px; }
+  .err { color: var(--bad); text-align: center; margin-top: 12px; font-size: 14px; }
+  .nudge { margin-top: 12px; padding: 14px 16px; border-radius: 16px; background: color-mix(in srgb, var(--good) 16%, var(--card)); border: 1px solid color-mix(in srgb, var(--good) 40%, transparent); }
+  .nudge b { display: block; font-size: 18px; }
+  .nudge span { color: var(--muted); font-size: 15px; }
+  .btn { border: 0; border-radius: 12px; padding: 11px 16px; font: inherit; font-weight: 700; background: var(--bar); color: #231d2b; }
+  .btn.quiet { background: var(--line); color: var(--ink); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  #pushStatus { color: var(--muted); font-size: 15px; }
+
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Mush</h1>
+    <a href="setup">Setup</a>
+  </header>
+
+  <div class="nudge" id="nudge" hidden><b>You tapped out. Good.</b><span id="nudgeText">Stay out a while. Mush heals while you're gone.</span></div>
+
+  <section class="hero">
+    <div id="brain" aria-hidden="true"></div>
+    <div class="pct" id="pct">–</div>
+    <div class="mood" id="mood">waking up…</div>
+    <div class="meter"><i id="meter"></i></div>
+    <div class="live" id="live" hidden></div>
+    <div class="err" id="err" hidden></div>
+  </section>
+
+  <section class="card">
+    <h2>Today</h2>
+    <div class="tiles">
+      <div class="tile"><b id="tMin">0</b><span>min scrolled</span></div>
+      <div class="tile"><b id="tOpens">0</b><span>opens</span></div>
+      <div class="tile"><b id="tResist">0</b><span>backed away</span></div>
+    </div>
+    <div class="apps" id="apps"></div>
+  </section>
+
+  <section class="card">
+    <h2>Last 14 days · minutes</h2>
+    <div class="chart" id="chart"></div>
+    <div class="days" id="days"></div>
+  </section>
+
+  <section class="card">
+    <h2>Recent</h2>
+    <ul class="recent" id="recent"></ul>
+  </section>
+
+  <section class="card">
+    <h2>Nudges</h2>
+    <div id="pushStatus">Checking…</div>
+    <div class="row">
+      <button class="btn" id="pushOn" hidden>Turn on nudges</button>
+      <button class="btn quiet" id="pushTest" hidden>Send a test nudge</button>
+    </div>
+  </section>
+
+  <section class="card rules" id="rules"></section>
+</main>
+
+<script src="brain.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const fmtMin = (m) => (m < 60 ? `${Math.round(m)} min` : `${Math.floor(m / 60)}h ${Math.round(m % 60)}m`);
+const NAMES = { tiktok: 'TikTok', youtube: 'YouTube', x: 'X', instagram: 'Instagram', reddit: 'Reddit', snapchat: 'Snapchat', facebook: 'Facebook', threads: 'Threads' };
+const pretty = (a) => (!a ? 'Unknown app' : Object.hasOwn(NAMES, a) ? NAMES[a] : a[0].toUpperCase() + a.slice(1));
+const timeOf = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+let lastHealthDrawn = null;
+function render(s) {
+  const h = s.health;
+  if (lastHealthDrawn === null || Math.abs(lastHealthDrawn - h) >= 0.5) {
+    $('brain').innerHTML = brainSVG(h);
+    lastHealthDrawn = h;
+  }
+  $('pct').textContent = Math.round(h) + '%';
+  $('mood').textContent = s.mood;
+  $('meter').style.width = h + '%';
+  $('meter').style.background = colorAt(h);
+  document.querySelector('meta[name=theme-color]').content = getComputedStyle(document.body).backgroundColor;
+
+  if (s.session) {
+    const free = s.session.paidFrom > s.now;
+    $('live').hidden = false;
+    $('live').textContent = free
+      ? `In ${pretty(s.session.app)}: free time, ${fmtMin((s.session.paidFrom - s.now) / 60000)} left today.`
+      : `In ${pretty(s.session.app)} for ${fmtMin((s.now - s.session.origin) / 60000)}. Mush is draining.`;
+  } else $('live').hidden = true;
+
+  $('tMin').textContent = Math.round(s.today.minutes);
+  $('tOpens').textContent = s.today.opens;
+  $('tResist').textContent = s.today.resisted;
+  $('apps').innerHTML = Object.entries(s.appsToday).sort((a, b) => b[1] - a[1])
+    .map(([a, m]) => `<div><span>${esc(pretty(a))}</span><span>${fmtMin(m)}</span></div>`).join('');
+
+  // 14-day chart with the break-even line (where a day's healing equals its rot)
+  const even = (24 * s.rules.healPerHour) / (s.rules.drainPerMin + s.rules.healPerHour / 60);
+  const max = Math.max(even * 1.25, ...s.days.map((d) => d.minutes));
+  $('chart').innerHTML = s.days.map((d) =>
+    `<div class="col" title="${d.date}: ${Math.round(d.minutes)} min"><i class="${d.minutes > even ? 'over' : ''}" style="height:${(d.minutes / max) * 100}%"></i></div>`).join('')
+    + `<div class="even" style="bottom:${(even / max) * 100}%"><span>break-even ${Math.round(even)}m</span></div>`;
+  $('days').innerHTML = s.days.map((d, i) => {
+    const wd = new Date(d.date + 'T12:00').toLocaleDateString([], { weekday: 'narrow' });
+    return `<span class="${i === 13 ? 'today' : ''}">${wd}</span>`;
+  }).join('');
+
+  $('recent').innerHTML = s.recent.length ? s.recent.map((r) => {
+    const right = r.resisted ? '<span class="win">backed away</span>'
+      : `<span class="r">${fmtMin((r.end - r.start) / 60000)}${r.live ? ' · now' : ''}</span>`;
+    return `<li><span>${esc(pretty(r.app))} <span class="r">· ${timeOf(r.start)}</span></span>${right}</li>`;
+  }).join('') : '<li class="empty">Nothing yet. Set up the Shortcuts on the Setup page.</li>';
+
+  const R = s.rules;
+  $('rules').innerHTML = `<h2>How Mush works</h2>
+    <p>Every minute in a tracked app costs ${R.drainPerMin}%. Every open costs ${R.openCost}%.</p>
+    <p>Every hour away heals ${R.healPerHour}%. Backing away at the prompt refunds the open, plus +${R.resistBonus}% at most once every ${R.resistBonusEveryMin} min.</p>
+    <p>After “Rot anyway”, popping out and back within ${R.graceMin} min skips the prompt.</p>
+    <p>After ${R.nudgeAfterMin} min in an app, Mush nudges you, then every ${R.nudgeEveryMin} min, and each minute from then on costs ${R.overstayDrainPerMin}%.</p>
+    ${Object.entries(R.freeMinPerDay).map(([a, m]) => `<p>${esc(pretty(a))}: the first ${m} min each day are free (no prompt, no cost, no nudges).</p>`).join('')}
+    <p>A session with no close counts for at most ${R.sessionCapMin} min.</p>`;
+}
+
+async function refresh() {
+  try {
+    const r = await fetch('api/state', { cache: 'no-store' });
+    if (!r.ok) throw new Error(r.status);
+    render(await r.json());
+    $('err').hidden = true;
+  } catch (e) {
+    $('err').hidden = false;
+    $('err').textContent = "Can't reach Mush. Is Tailscale on?";
+  }
+}
+// ----- inside the Android app: its own Setup panel, and it nudges on the phone itself -----
+const inAndroidApp = /MushAndroid/.test(navigator.userAgent) && window.MushApp;
+if (inAndroidApp) {
+  document.querySelector('header a').addEventListener('click', (e) => { e.preventDefault(); window.MushApp.openSetup(); });
+  $('pushStatus').textContent = 'The Android app nudges you itself: the brain covers the screen.';
+}
+
+// ----- nudges (Web Push; iOS allows it only from the Home Screen app) -----
+const nudgeApp = new URLSearchParams(location.search).get('nudge');
+if (nudgeApp !== null) {
+  $('nudge').hidden = false;
+  if (nudgeApp) {
+    $('nudgeText').textContent = `You left ${pretty(nudgeApp)}. Stay out a while; Mush heals while you're gone.`;
+    // Tapping a nudge always takes you out of the app; record that in case its close automation didn't fire.
+    fetch('api/close?app=' + encodeURIComponent(nudgeApp)).then(refresh, () => {});
+  }
+  history.replaceState(null, '', location.pathname);
+}
+
+const b64ToBytes = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
+async function sendSub(sub) {
+  const r = await fetch('api/push/subscribe', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(sub) });
+  if (!r.ok) throw new Error('subscribe ' + r.status);
+}
+async function pushSetup() {
+  const status = $('pushStatus');
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+    status.textContent = 'Open Mush from its Home Screen icon to turn on nudges (iPhone only allows them there).';
+    return;
+  }
+  const reg = await navigator.serviceWorker.register('sw.js');
+  await navigator.serviceWorker.ready;
+  let existing = await reg.pushManager.getSubscription();
+  if (existing) {
+    // A subscription made with an old server key is rejected by the push service; make a new one.
+    const key = await (await fetch('api/push/key')).text();
+    const have = existing.options?.applicationServerKey;
+    const same = have && b64ToBytes(key).every((b, i) => new Uint8Array(have)[i] === b) && new Uint8Array(have).length === b64ToBytes(key).length;
+    if (!same && Notification.permission === 'granted') {
+      await existing.unsubscribe().catch(() => {});
+      existing = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) }).catch(() => null);
+    }
+  }
+  if (existing && Notification.permission === 'granted') {
+    await sendSub(existing).catch(() => {}); // keeps the server's copy current
+    status.textContent = 'Nudges are on.';
+    $('pushOn').hidden = true; $('pushTest').hidden = false;
+    return;
+  }
+  if (Notification.permission === 'denied') {
+    status.textContent = 'Notifications are blocked for Mush. Turn them on in Settings → Notifications → Mush.';
+    return;
+  }
+  status.textContent = 'Nudges are off. Without them Mush only asks when you open an app.';
+  $('pushOn').hidden = false;
+  $('pushOn').onclick = async () => {
+    try {
+      if (await Notification.requestPermission() !== 'granted') { status.textContent = 'Permission not given.'; return; }
+      const key = await (await fetch('api/push/key')).text();
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) });
+      await sendSub(sub);
+      pushSetup();
+    } catch (e) { status.textContent = 'Could not turn on nudges: ' + e.message; }
+  };
+}
+$('pushTest').onclick = async () => {
+  $('pushTest').textContent = 'Sending…';
+  try {
+    const res = await (await fetch('api/push/test', { method: 'POST' })).json();
+    $('pushStatus').textContent = res.length && res.every((r) => r.status >= 200 && r.status < 300)
+      ? 'Sent. It should show up in a few seconds.'
+      : 'Push service said: ' + (res.map((r) => `${r.status} ${r.detail}`).join('; ') || 'no subscriptions');
+  } catch (e) { $('pushStatus').textContent = 'Test failed: ' + e.message; }
+  $('pushTest').textContent = 'Send a test nudge';
+};
+if (!inAndroidApp) pushSetup().catch((e) => { $('pushStatus').textContent = 'Nudges unavailable: ' + e.message; });
+
+refresh();
+setInterval(() => { if (!document.hidden) refresh(); }, 20000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+  /* brain motion */
+  .bob { animation: bob var(--bob, 3s) ease-in-out infinite; transform-origin: 120px 190px; }
+  @keyframes bob { 50% { transform: translateY(-4px) scaleY(1.015); } }
+  .drip { animation: drip var(--d, 2.4s) ease-in infinite; }
+  @keyframes drip { 0% { transform: translateY(0); opacity: 0; } 15% { opacity: 1; } 100% { transform: translateY(26px); opacity: 0; } }
+  .fly { animation: orbit var(--d, 4s) linear infinite; transform-origin: 120px 100px; }
+  @keyframes orbit { to { transform: rotate(360deg); } }
+  .spark { animation: twinkle var(--d, 2s) ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+  @keyframes twinkle { 0%,100% { opacity: 0; transform: scale(.4); } 50% { opacity: 1; transform: scale(1); } }
+  @media (prefers-reduced-motion: reduce) { .bob, .drip, .fly, .spark { animation: none; } }

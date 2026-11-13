@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mush Setup</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Mush">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+  :root { --bg: #fbf7f4; --card: #fff; --ink: #231d2b; --muted: #776f80; --line: #ece4de; --accent: #d9577f; --code: #f4eee9; color-scheme: light; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #17141f; --card: #221d2c; --ink: #f3eef7; --muted: #a59cb1; --line: #322b3e; --accent: #ff93b6; --code: #2c2638; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --bg: #17141f; --card: #221d2c; --ink: #f3eef7; --muted: #a59cb1; --line: #322b3e; --accent: #ff93b6; --code: #2c2638; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 ui-rounded, "SF Pro Rounded", system-ui, -apple-system, sans-serif;
+    padding: calc(env(safe-area-inset-top) + 12px) 16px calc(env(safe-area-inset-bottom) + 40px); }
+  main { max-width: 620px; margin: 0 auto; }
+  header { display: flex; justify-content: space-between; align-items: center; }
+  header h1 { font-size: 20px; margin: 0; }
+  a { color: var(--accent); }
+  header a { text-decoration: none; font-size: 15px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 16px; margin-top: 16px; }
+  h2 { font-size: 18px; margin: 0 0 8px; }
+  h2 small { color: var(--muted); font-weight: 600; font-size: 13px; display: block; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 2px; }
+  ol { padding-left: 22px; margin: 8px 0 0; }
+  li { margin: 6px 0; }
+  ol ol { margin-top: 4px; }
+  .muted { color: var(--muted); font-size: 15px; }
+  .url { display: flex; gap: 8px; align-items: stretch; margin: 6px 0 2px; }
+  .url code { flex: 1; min-width: 0; overflow-wrap: anywhere; background: var(--code); border-radius: 10px; padding: 8px 10px; font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .url button { flex: none; border: 0; border-radius: 10px; padding: 0 14px; font: inherit; font-size: 14px; font-weight: 700; background: var(--accent); color: #fff; }
+  b.ui { font-weight: 700; }
+  .var { display: inline-block; padding: 0 6px; border-radius: 6px; background: color-mix(in srgb, var(--accent) 22%, transparent); font-weight: 600; }
+  label { font-weight: 700; display: block; margin-bottom: 6px; }
+  input { width: 100%; font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--code); color: var(--ink); }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 15px; }
+  td, th { text-align: left; padding: 7px 4px; border-top: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-size: 13px; font-weight: 700; }
+  .test { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .test button { border: 1px solid var(--line); background: var(--code); color: var(--ink); border-radius: 10px; padding: 8px 12px; font: inherit; font-size: 14px; }
+  pre { white-space: pre-wrap; background: var(--code); border-radius: 10px; padding: 10px; font: 13px/1.4 ui-monospace, Menlo, monospace; margin: 10px 0 0; }
+</style>
+</head>
+<body>
+<main>
+  <header><h1>Mush setup</h1><a href="./">← Brain</a></header>
+  <p class="muted">Android phone? <a href="android">Mush for Android</a> catches Reels and Shorts themselves.</p>
+
+  <section class="card">
+    <h2><small>Step 0</small>Before you start</h2>
+    <ol>
+      <li>Tailscale on the iPhone, with <b class="ui">VPN On Demand</b> turned on (Tailscale app → Settings), so the automations can reach Mush on cellular too. If Tailscale is off, an automation just shows an error and the app opens normally.</li>
+      <li>Open this page in Safari, tap <b class="ui">Share → Add to Home Screen</b>. That is the brain.</li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <label for="apps">Apps you want Mush to watch</label>
+    <input id="apps" value="instagram, tiktok, youtube, reddit, x" autocapitalize="none" autocomplete="off" spellcheck="false">
+    <p class="muted">Lowercase names, separated by commas. These are only labels; the automations decide which app is which.</p>
+  </section>
+
+  <section class="card">
+    <h2><small>Step 1</small>Shortcut “Mush Gate”</h2>
+    <p class="muted">Shortcuts app → <b class="ui">+</b>. Name it exactly <b>Mush Gate</b>. Tap the <b class="ui">ⓘ</b> (or the name) and turn on <b class="ui">Receive input</b>, type Text, from Shortcuts; under “If there's no input”, choose Continue.</p>
+    <ol>
+      <li>Add <b class="ui">Get Contents of URL</b>. Paste this URL, then replace the <span class="var">APP</span> at the end: delete it, tap <b class="ui">Select Variable</b> and pick <span class="var">Shortcut Input</span>.
+        <div class="url"><code id="uOpen"></code><button data-copy="uOpen">Copy</button></div></li>
+      <li>Add <b class="ui">If</b> with <span class="var">Contents of URL</span> and no condition (on older iOS, which asks for one: <b class="ui">is</b> <code>true</code>). Mush answers <code>true</code> when you're allowed straight in. Leave the top half empty.</li>
+      <li>Inside <b class="ui">Otherwise</b>, add <b class="ui">Choose from Menu</b>. Tap its Prompt and pick the variable <span class="var">Contents of URL</span>. Name the two options <b>Back away</b> and <b>Rot anyway</b>.</li>
+      <li>Under <b>Back away</b>:
+        <ol>
+          <li><b class="ui">Get Contents of URL</b> with this URL (same <span class="var">APP</span> → <span class="var">Shortcut Input</span> swap):
+            <div class="url"><code id="uResist"></code><button data-copy="uResist">Copy</button></div></li>
+          <li><b class="ui">Go to Home Screen</b>.</li>
+        </ol></li>
+      <li>Under <b>Rot anyway</b>: <b class="ui">Get Contents of URL</b> with
+        <div class="url"><code id="uRot"></code><button data-copy="uRot">Copy</button></div></li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h2><small>Step 2</small>Shortcut “Mush Close”</h2>
+    <p class="muted">New shortcut named <b>Mush Close</b>, with <b class="ui">Receive input</b> on, just like Mush Gate.</p>
+    <ol>
+      <li><b class="ui">Get Contents of URL</b> with this URL (<span class="var">APP</span> → <span class="var">Shortcut Input</span>):
+        <div class="url"><code id="uClose"></code><button data-copy="uClose">Copy</button></div></li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h2><small>Step 3</small>Two automations per app</h2>
+    <p class="muted">This is the <b class="ui">Automation</b> tab in the Shortcuts app’s bottom bar, not an action inside a shortcut (the <b class="ui">Open App</b> action launches an app; it doesn’t watch for one). Shortcuts → <b class="ui">Automation</b> → <b class="ui">+</b> → <b class="ui">App</b>. For each row: choose the app, tick only the one box shown, pick <b class="ui">Run Immediately</b>, turn off <b class="ui">Notify When Run</b>, then <b class="ui">New Blank Automation</b>. Add a <b class="ui">Text</b> action holding the name, then <b class="ui">Run Shortcut</b>. In Run Shortcut, tap <b class="ui">Input</b> (or the arrow) and pick the <span class="var">Text</span> variable; it is not passed on its own. Mush Gate also needs <b class="ui">Receive input</b> turned on, or the app name never arrives.</p>
+    <table>
+      <thead><tr><th>App</th><th>When</th><th>Text</th><th>Run Shortcut</th></tr></thead>
+      <tbody id="autos"></tbody>
+    </table>
+    <p class="muted">Tip: build the first pair, then long-press an automation and duplicate it to make the rest faster.</p>
+  </section>
+
+  <section class="card">
+    <h2><small>Step 4</small>Check it</h2>
+    <p class="muted">Open one of the apps. You should get the Mush prompt, and the brain page should show the session. These buttons only test that the server answers; they record nothing.</p>
+    <div class="test"><button id="ping">Ping Mush</button></div>
+    <pre id="out" hidden></pre>
+  </section>
+</main>
+<script>
+const base = location.origin;
+const set = (id, path) => { document.getElementById(id).textContent = `${base}/api/${path}?app=APP`; };
+set('uOpen', 'open'); set('uResist', 'resist'); set('uRot', 'rot'); set('uClose', 'close');
+
+document.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
+  const text = document.getElementById(b.dataset.copy).textContent;
+  try { await navigator.clipboard.writeText(text); b.textContent = 'Copied'; }
+  catch { b.textContent = 'Select it'; }
+  setTimeout(() => (b.textContent = 'Copy'), 1500);
+}));
+
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function drawAutos() {
+  const apps = document.getElementById('apps').value.split(',').map((a) => a.trim().toLowerCase()).filter(Boolean);
+  document.getElementById('autos').innerHTML = apps.map((a) => {
+    const name = esc(a[0].toUpperCase() + a.slice(1));
+    return `<tr><td>${name}</td><td>Is Opened</td><td><code>${esc(a)}</code></td><td>Mush Gate</td></tr>
+            <tr><td>${name}</td><td>Is Closed</td><td><code>${esc(a)}</code></td><td>Mush Close</td></tr>`;
+  }).join('');
+  try { localStorage.setItem('mush.apps', document.getElementById('apps').value); } catch {}
+}
+try { const saved = localStorage.getItem('mush.apps'); if (saved) document.getElementById('apps').value = saved; } catch {}
+document.getElementById('apps').addEventListener('input', drawAutos);
+drawAutos();
+
+document.getElementById('ping').addEventListener('click', async () => {
+  const out = document.getElementById('out');
+  out.hidden = false;
+  try {
+    const s = await (await fetch('api/state', { cache: 'no-store' })).json();
+    out.textContent = `Mush is up. Brain at ${Math.round(s.health)}% (${s.mood}). ${s.today.opens} opens today.`;
+  } catch { out.textContent = "Can't reach Mush. Is Tailscale on?"; }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+# Draft for the fdroiddata merge request (gitlab.com/fdroid/fdroiddata, file metadata/io.github.drewthomas00.mush.yml).
+Categories:
+  - Sports & Health
+License: GPL-3.0-or-later
+AuthorName: Drew Thomas
+SourceCode: https://github.com/drewthomas00/mush
+IssueTracker: https://github.com/drewthomas00/mush/issues
+Changelog: https://github.com/drewthomas00/mush/releases
+# Donate: <add the donation link here once there is one>
+
+AutoName: Mush
+
+RepoType: git
+Repo: https://github.com/drewthomas00/mush.git
+
+Builds:
+  - versionName: 1.0.0
+    versionCode: 10
+    commit: v1.0.0
+    subdir: android/app
+    gradle:
+      - yes
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 1.0.0
+CurrentVersionCode: 10
