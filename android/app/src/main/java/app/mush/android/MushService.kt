@@ -53,6 +53,7 @@ class MushService : AccessibilityService() {
     // Short-form inside a gated app.
     private var insideShort = false
     private var stopShown = false // the goal's hard stop, once per session
+    private var sentHome = false  // a stop's button sent you home: coming back is a fresh open
     private var insideSnoozeUntil = 0L
 
     private var evalQueued = false
@@ -256,7 +257,7 @@ class MushService : AccessibilityService() {
 
     private fun enter(app: String, pkg: String, kind: Kind, short: Boolean) {
         // Back in the same app, unless it's right after a stop sent you home: that's a fresh open (and the stop again).
-        val reopenAfterStop = activeApp == app && stopShown && exitPending != null
+        val reopenAfterStop = activeApp == app && sentHome && exitPending != null
         exitPending?.let { main.removeCallbacks(it) }
         exitPending = null
         if (activeApp == app && !reopenAfterStop) { activePkg = pkg; return }
@@ -266,6 +267,7 @@ class MushService : AccessibilityService() {
         activePkg = pkg
         insideShort = false
         stopShown = false
+        sentHome = false
         val now = SystemClock.uptimeMillis()
         nudgesShown = if (app == lastExitApp && now - lastExitAt < REENTER_MS) lastExitNudges else 0
         status("In $app ($pkg)")
@@ -323,7 +325,7 @@ class MushService : AccessibilityService() {
         stopShown = true
         val pkg = activePkg
         overlay.show(text, "Back away", null,
-            onPrimary = { backAway(app) },
+            onPrimary = { sentHome = true; backAway(app) },
             onSecondary = {},
             tertiary = if (kind == Kind.VIDEO && pkg != null) "This isn't video" else null,
             onTertiary = { if (pkg != null) notVideo(pkg) },
@@ -338,7 +340,7 @@ class MushService : AccessibilityService() {
             if (activeApp != app || !insideShort) return@short
             if (stop != null) {
                 stopShown = true
-                overlay.show(stop, "Back away", null, onPrimary = { performGlobalAction(GLOBAL_ACTION_HOME) }, onSecondary = {})
+                overlay.show(stop, "Back away", null, onPrimary = { sentHome = true; performGlobalAction(GLOBAL_ACTION_HOME) }, onSecondary = {})
             } else if (SystemClock.uptimeMillis() >= insideSnoozeUntil && !overlay.showing) {
                 showInsidePrompt(app)
             }
@@ -376,7 +378,7 @@ class MushService : AccessibilityService() {
             if (o.optBoolean("stop")) { // past a goal mid-session: the only way on is out, every time you look
                 stopShown = true
                 if (!overlay.showing) {
-                    overlay.show(o.optString("body"), "Get out", null, onPrimary = { performGlobalAction(GLOBAL_ACTION_HOME) }, onSecondary = {})
+                    overlay.show(o.optString("body"), "Get out", null, onPrimary = { sentHome = true; performGlobalAction(GLOBAL_ACTION_HOME) }, onSecondary = {})
                 }
                 return@nudge
             }

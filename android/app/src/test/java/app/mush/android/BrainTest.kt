@@ -165,6 +165,8 @@ class BrainTest {
         val fresh = sum(listOf(ev(-780.0, "open", "facebook"), ev(-770.0, "close", "facebook"), ev(-20.0, "open", "facebook"), ev(-15.0, "close", "facebook")), t0)
         assertEquals(0, fresh.pace.days)
         assertNull(fresh.pace.avg)
+        // a back-away after the close (iPhone) zeroes the short-form seconds too
+        near(0.0, sum(listOf(ev(0.0, "open", "tiktok"), ev(0.1, "close", "tiktok"), ev(0.2, "resist", "tiktok")), t0 + M).shortUsed)
     }
 
     @Test fun summaryCountsDaysAndGateText() {
