@@ -6,7 +6,7 @@ AuthorName: Drew Thomas
 SourceCode: https://github.com/drewthomas00/mush
 IssueTracker: https://github.com/drewthomas00/mush/issues
 Changelog: https://github.com/drewthomas00/mush/releases
-# Donate: <add the donation link here once there is one>
+Donate: https://venmo.com/u/Andrew-Thomas-125
 
 AutoName: Mush
 
@@ -14,14 +14,14 @@ RepoType: git
 Repo: https://github.com/drewthomas00/mush.git
 
 Builds:
-  - versionName: 1.0.0
-    versionCode: 10
-    commit: v1.0.0
+  - versionName: 1.0.1
+    versionCode: 11
+    commit: v1.0.1
     subdir: android/app
     gradle:
       - yes
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
-CurrentVersion: 1.0.0
-CurrentVersionCode: 10
+CurrentVersion: 1.0.1
+CurrentVersionCode: 11

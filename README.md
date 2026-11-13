@@ -80,7 +80,8 @@ Release builds are signed in CI from repository secrets (`MUSH_KEYSTORE_B64`,
 
 ## Support
 
-Mush is free. If it gives you your time back, you can chip in from Setup → **Support Mush**.
+Mush is free. If it gives you your time back, you can chip in on [Venmo](https://venmo.com/u/Andrew-Thomas-125) (US) or from
+Setup → **Support Mush** in the app.
 
 ## License
 

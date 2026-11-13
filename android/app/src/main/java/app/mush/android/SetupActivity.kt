@@ -85,7 +85,7 @@ class SetupActivity : Activity() {
         if (BuildConfig.DONATE_VENMO.isNotEmpty() || BuildConfig.DONATE_PAYPAL.isNotEmpty()) {
             heading("Support Mush")
             text("Mush is free and open source, with no ads and no tracking. If it gives you your time back, you can chip in.", 14f, muted)
-            if (BuildConfig.DONATE_VENMO.isNotEmpty()) button("Donate with Venmo") { open(BuildConfig.DONATE_VENMO) }
+            if (BuildConfig.DONATE_VENMO.isNotEmpty()) button("Donate with Venmo (US)") { open(BuildConfig.DONATE_VENMO) }
             if (BuildConfig.DONATE_PAYPAL.isNotEmpty()) button("Donate with PayPal") { open(BuildConfig.DONATE_PAYPAL) }
         }
 

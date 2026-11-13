@@ -2,7 +2,7 @@
 
 1. Make a GitLab account and fork https://gitlab.com/fdroid/fdroiddata.
 2. In the fork, add `metadata/io.github.drewthomas00.mush.yml` from `io.github.drewthomas00.mush.yml`
-   here (add a `Donate:` line with the donation link once there is one).
+   here.
 3. Open a merge request titled "New app: Mush". Mention:
    - It uses an AccessibilityService only to detect which app is open and full-screen upright
      video (view ids, classes and bounds); nothing is sent off the device unless the user
