@@ -14,14 +14,14 @@ RepoType: git
 Repo: https://github.com/drewthomas00/mush.git
 
 Builds:
-  - versionName: 1.1.0
-    versionCode: 12
-    commit: v1.1.0
+  - versionName: 1.1.1
+    versionCode: 13
+    commit: v1.1.1
     subdir: android/app
     gradle:
       - yes
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
-CurrentVersion: 1.1.0
-CurrentVersionCode: 12
+CurrentVersion: 1.1.1
+CurrentVersionCode: 13

@@ -22,30 +22,60 @@ import java.util.concurrent.Executors
 class Widget : AppWidgetProvider() {
     override fun onUpdate(ctx: Context, mgr: AppWidgetManager, ids: IntArray) = refresh(ctx)
 
+    /**
+     * After an update the home screen still holds the old version's widget, whose view ids no
+     * longer match the new layout ("Problem loading widget"); redraw it straight away.
+     */
+    class Updated : android.content.BroadcastReceiver() {
+        override fun onReceive(ctx: Context, intent: Intent) {
+            if (intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+            val pending = goAsync() // keep the process alive until the redraw is done
+            refresh(ctx) { pending.finish() }
+        }
+    }
+
     companion object {
         private val io = Executors.newSingleThreadExecutor()
         private val main = Handler(Looper.getMainLooper())
 
-        /** Redraws every Mush widget. Safe to call from anywhere, as often as you like. */
-        fun refresh(ctx: Context) {
+        /** Redraws every Mush widget. Safe to call from anywhere, as often as you like; `done` runs after. */
+        fun refresh(ctx: Context, done: () -> Unit = {}) {
             val app = ctx.applicationContext
             val mgr = AppWidgetManager.getInstance(app)
             val ids = mgr.getAppWidgetIds(ComponentName(app, Widget::class.java))
-            if (ids.isEmpty()) return
+            if (ids.isEmpty()) { done(); return }
             if (Api.serverConfigured(app)) {
-                main.post { Api.get(app, "/api/state") { b -> draw(app, mgr, ids, b?.let { runCatching { JSONObject(it) }.getOrNull() }) } }
+                main.post {
+                    Api.get(app, "/api/state") { b ->
+                        draw(app, mgr, ids, b?.let { runCatching { JSONObject(it) }.getOrNull() }, "can't reach your server")
+                        done()
+                    }
+                }
             } else {
-                io.execute { draw(app, mgr, ids, runCatching { Local.get(app).stateJson() }.getOrNull()) }
+                io.execute {
+                    draw(app, mgr, ids, runCatching { Local.get(app).stateJson() }.getOrNull(), "tap to open Mush")
+                    done()
+                }
             }
         }
 
-        private fun draw(ctx: Context, mgr: AppWidgetManager, ids: IntArray, state: JSONObject?) {
+        private fun draw(ctx: Context, mgr: AppWidgetManager, ids: IntArray, state: JSONObject?, noState: String) {
+            // If the full version fails on our side (bad data, the bitmap), draw the plain one instead.
+            runCatching { drawFull(ctx, mgr, ids, state, noState) }.onFailure {
+                runCatching { drawFull(ctx, mgr, ids, null, noState) }
+            }
+        }
+
+        private fun drawFull(ctx: Context, mgr: AppWidgetManager, ids: IntArray, state: JSONObject?, noState: String) {
             val health = state?.optDouble("health", Double.NaN) ?: Double.NaN
             val views = RemoteViews(ctx.packageName, R.layout.widget)
             if (health.isNaN()) {
                 views.setTextViewText(R.id.widget_pct, "–")
-                views.setTextViewText(R.id.widget_mood, "can't reach Mush")
+                views.setTextViewText(R.id.widget_mood, noState)
                 views.setImageViewBitmap(R.id.widget_brain, BrainArt.draw(60.0, 240))
+                views.setTextViewText(R.id.widget_today, "")
+                views.setTextViewText(R.id.widget_pace, "")
+                views.setTextViewText(R.id.widget_goal, "")
             } else {
                 views.setTextViewText(R.id.widget_pct, "${Math.round(health)}%")
                 views.setTextViewText(R.id.widget_mood, state!!.optString("mood"))

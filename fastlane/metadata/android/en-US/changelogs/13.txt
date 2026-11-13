@@ -1,0 +1,1 @@
+The home-screen widget redraws as soon as Mush is updated, and shows when it can't reach your server.
