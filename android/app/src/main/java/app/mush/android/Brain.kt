@@ -42,7 +42,7 @@ data class Session(
     val free: Boolean = false,
     val paidFrom: Long = start,
     val live: Boolean = false,
-    val shortMs: Long = 0,
+    var shortMs: Long = 0,
     val shortOn: Boolean = false,
 )
 
@@ -176,6 +176,7 @@ object Brain {
                         if (prev != null && !prev.resisted && ev.t - prev.start < 5 * MIN) {
                             prev.resisted = true
                             prev.end = prev.start
+                            prev.shortMs = 0
                             target = prev
                         }
                     }
@@ -261,7 +262,7 @@ object Brain {
         var paceDays = 0
         for (d in 1..7) {
             val from = today.minusDays(d.toLong()).atStartOfDay(zone).toInstant().toEpochMilli()
-            if (from + HOUR.toLong() * 24 <= first) break // Mush wasn't in use yet that day
+            if (from + sinceMidnight <= first) break // Mush wasn't in use yet by this time that day
             val to = from + sinceMidnight
             for (s in r.sessions) paceSum += maxOf(0L, minOf(s.end, to) - maxOf(s.start, from)) / MIN
             paceDays++
@@ -294,8 +295,8 @@ object Brain {
         val shortMax = s.shortMax
         if (isShort && shortMax != null && s.shortUsed >= shortMax) return Decision(false, true, stopText(s, "short", null))
         if (live?.free == true) return Decision(true, false, null)
-        val goal = s.goals.firstOrNull { app in it.goal.apps }
-        if (goal != null && goal.used >= goal.goal.max) return Decision(false, true, stopText(s, "goal", goal))
+        val goal = s.goals.firstOrNull { app in it.goal.apps && it.used >= it.goal.max } // any used-up goal it's part of
+        if (goal != null) return Decision(false, true, stopText(s, "goal", goal))
         if (live?.cont == true) return Decision(true, false, null)
         return Decision(false, false, gateText(s, app, rules))
     }
@@ -321,8 +322,8 @@ object Brain {
         val shortMax = s.shortMax
         if (live.shortOn && shortMax != null && s.shortUsed >= shortMax) return stopText(s, "short", null)
         if (now < live.paidFrom) return null // still in free minutes
-        val goal = s.goals.firstOrNull { live.app in it.goal.apps } ?: return null
-        return if (goal.used >= goal.goal.max) stopText(s, "goal", goal) else null
+        val goal = s.goals.firstOrNull { live.app in it.goal.apps && it.used >= it.goal.max } ?: return null
+        return stopText(s, "goal", goal)
     }
 
     /** How many nudges a live session is owed by `now`. */

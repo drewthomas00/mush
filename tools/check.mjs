@@ -1,6 +1,6 @@
 // Quick checks of the health model: node tools/check.mjs
 import assert from 'node:assert/strict';
-import { replay, nudgesDue, RULES, summarize, decide } from '../server.mjs';
+import { replay, nudgesDue, RULES, summarize, decide, stopNow, nudgeMessage } from '../server.mjs';
 
 const M = 60_000, H = 3_600_000, t0 = Date.UTC(2026, 0, 1, 12);
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-6, `${a} != ${b}`);
@@ -167,6 +167,31 @@ pace.sort((a, b) => a.t - b.t); // the log is always in time order
 sm = summarize(pace, t0, G);
 near(sm.pace.avg, 20); assert.equal(sm.pace.days, 7); // 20 min before noon each day; the afternoon sessions are later than now
 near(sm.pace.today, 10);
+// a goal crossed mid-session stops it (but not inside free minutes), and the nudge says so
+sm = summarize([ev(0, 'open', 'facebook'), ev(31, 'still', 'facebook')], t0 + 31 * M, G);
+assert.ok(stopNow(sm, sm.session, t0 + 31 * M).startsWith('⛔ Over today'));
+assert.equal(nudgeMessage(sm, sm.session, t0 + 31 * M).stop, true);
+assert.equal(nudgeMessage(sm, sm.session, t0 + 31 * M, { ignoreStop: true }).stop, undefined);
+sm = summarize([ev(0, 'open', 'facebook'), ev(31, 'close', 'facebook'), ev(40, 'open', 'linkedin')], t0 + 45 * M, G);
+assert.equal(stopNow(sm, sm.session, t0 + 45 * M), null); // linkedin's free minutes run until 50
+sm = summarize([ev(0, 'open', 'facebook'), ev(31, 'close', 'facebook'), ev(40, 'open', 'linkedin')], t0 + 51 * M, G);
+assert.ok(stopNow(sm, sm.session, t0 + 51 * M).startsWith('⛔ Over today'));
+// short-form with a budget of 5: under it, fine; past it, a stop
+const G5 = { ...G, shortMax: 5 };
+sm = summarize([ev(0, 'open', 'facebook'), ev(1, 'short', 'facebook')], t0 + 4 * M, G5);
+assert.equal(stopNow(sm, sm.session, t0 + 4 * M), null);
+sm = summarize([ev(0, 'open', 'facebook'), ev(1, 'short', 'facebook')], t0 + 7 * M, G5);
+assert.ok(stopNow(sm, sm.session, t0 + 7 * M).startsWith('⛔ Short-form goal used up'));
+// any used-up goal an app is part of stops it, not just the first listed
+const G2 = { ...G, goals: [{ apps: ['facebook'], max: 20 }, { apps: ['facebook', 'instagram'], max: 40 }] };
+d = decide(summarize([ev(0, 'open', 'instagram'), ev(25, 'close', 'instagram'), ev(30, 'open', 'facebook'), ev(46, 'close', 'facebook'), ev(50, 'open', 'facebook')], t0 + 50 * M, G2), 'facebook');
+assert.equal(d.stop, true);
+// pace ignores the install day's window if Mush wasn't in use by this time that day
+sm = summarize([ev(-780, 'open', 'facebook'), ev(-770, 'close', 'facebook'), ev(-20, 'open', 'facebook'), ev(-15, 'close', 'facebook')], t0, G);
+assert.equal(sm.pace.days, 0); assert.equal(sm.pace.avg, null);
+// a back-away after the close (iPhone) zeroes the short-form seconds too
+sm = summarize([ev(0, 'open', 'tiktok'), ev(0.1, 'close', 'tiktok'), ev(0.2, 'resist', 'tiktok')], t0 + M, G);
+near(sm.short.used, 0);
 
 // floor
 r = flat([ev(0, 'open'), ev(44, 'close'), ev(44, 'open'), ev(88, 'close'), ev(88, 'open'), ev(130, 'close')], t0 + 130 * M);

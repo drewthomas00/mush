@@ -255,9 +255,11 @@ class MushService : AccessibilityService() {
     }
 
     private fun enter(app: String, pkg: String, kind: Kind, short: Boolean) {
+        // Back in the same app, unless it's right after a stop sent you home: that's a fresh open (and the stop again).
+        val reopenAfterStop = activeApp == app && stopShown && exitPending != null
         exitPending?.let { main.removeCallbacks(it) }
         exitPending = null
-        if (activeApp == app) { activePkg = pkg; return }
+        if (activeApp == app && !reopenAfterStop) { activePkg = pkg; return }
         if (activeApp != null) exitNow()
         activeApp = app
         activeKind = kind
@@ -371,9 +373,9 @@ class MushService : AccessibilityService() {
         val app = activeApp ?: return
         Backend.get(this).nudge(app) { o ->
             if (o == null || activeApp != app) return@nudge
-            if (o.optBoolean("stop")) { // crossed a goal mid-session: the only way on is out
-                if (!stopShown) {
-                    stopShown = true
+            if (o.optBoolean("stop")) { // past a goal mid-session: the only way on is out, every time you look
+                stopShown = true
+                if (!overlay.showing) {
                     overlay.show(o.optString("body"), "Get out", null, onPrimary = { performGlobalAction(GLOBAL_ACTION_HOME) }, onSecondary = {})
                 }
                 return@nudge

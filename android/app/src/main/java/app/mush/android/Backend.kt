@@ -35,6 +35,8 @@ class Remote(private val ctx: Context) : Backend {
         Api.get(ctx, "/api/open?app=${Api.q(app)}&dev=android&fmt=json${if (short) "&short=1" else ""}") { body ->
             done(body?.let { b ->
                 runCatching { JSONObject(b) }.getOrNull()?.let { Decision(it.optBoolean("allow"), it.optBoolean("stop"), it.optString("text").ifEmpty { null }) }
+                    // a server older than 1.1 answers in text: "true" lets you in, anything else is the prompt
+                    ?: if (b.trim() == "true") Decision(true, false, null) else Decision(false, false, b.trim())
             })
             Widget.refresh(ctx)
         }

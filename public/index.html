@@ -150,7 +150,7 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const fmtMin = (m) => (m < 60 ? `${Math.round(m)} min` : `${Math.floor(m / 60)}h ${Math.round(m % 60)}m`);
-const NAMES = { tiktok: 'TikTok', youtube: 'YouTube', x: 'X', instagram: 'Instagram', reddit: 'Reddit', snapchat: 'Snapchat', facebook: 'Facebook', threads: 'Threads' };
+const NAMES = { tiktok: 'TikTok', youtube: 'YouTube', x: 'X', instagram: 'Instagram', reddit: 'Reddit', snapchat: 'Snapchat', facebook: 'Facebook', threads: 'Threads', linkedin: 'LinkedIn' };
 const pretty = (a) => (!a ? 'Unknown app' : Object.hasOwn(NAMES, a) ? NAMES[a] : a[0].toUpperCase() + a.slice(1));
 const timeOf = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));

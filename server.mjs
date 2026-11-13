@@ -193,6 +193,7 @@ export function replay(evs, now, rules = RULES) {
           if (prev && !prev.resisted && ev.t - prev.start < 5 * MIN) {
             prev.resisted = true;
             prev.end = prev.start;
+            prev.shortMs = 0;
             target = prev;
           }
         }
@@ -291,8 +292,8 @@ export function summarize(evs, now, rules = RULES) {
   let paceDays = 0;
   for (let d = 1; d <= 7; d++) {
     const from = new Date(n.getFullYear(), n.getMonth(), n.getDate() - d).getTime();
-    if (from + 24 * HOUR <= first) break; // Mush wasn't in use yet that day
     const to = from + sinceMidnight;
+    if (to <= first) break; // Mush wasn't in use yet by this time that day
     for (const s of r.sessions) paceSum += Math.max(0, Math.min(s.end, to) - Math.max(s.start, from)) / MIN;
     paceDays++;
   }
@@ -327,8 +328,8 @@ export function decide(s, app, short = false) {
     return { allow: false, stop: true, text: stopText(s, app, 'short') };
   }
   if (live?.free) return { allow: true, stop: false };
-  const goal = s.goals.find((g) => g.apps.includes(app));
-  if (goal && goal.used >= goal.max) return { allow: false, stop: true, text: stopText(s, app, 'goal', goal) };
+  const goal = s.goals.find((g) => g.apps.includes(app) && g.used >= g.max); // any used-up goal it's part of
+  if (goal) return { allow: false, stop: true, text: stopText(s, app, 'goal', goal) };
   if (live?.cont) return { allow: true, stop: false };
   return { allow: false, stop: false, text: gateText(s, app) };
 }
@@ -344,7 +345,7 @@ function stopText(s, app, why, goal) {
 
 // ---------- the prompt text the Shortcut shows ----------
 
-const NAMES = { tiktok: 'TikTok', youtube: 'YouTube', x: 'X', instagram: 'Instagram', reddit: 'Reddit', snapchat: 'Snapchat', facebook: 'Facebook', threads: 'Threads' };
+const NAMES = { tiktok: 'TikTok', youtube: 'YouTube', x: 'X', instagram: 'Instagram', reddit: 'Reddit', snapchat: 'Snapchat', facebook: 'Facebook', threads: 'Threads', linkedin: 'LinkedIn' };
 const pretty = (app) => (!app ? 'That app' : Object.hasOwn(NAMES, app) ? NAMES[app] : app.charAt(0).toUpperCase() + app.slice(1));
 
 const LINES = {
@@ -398,15 +399,15 @@ export function nudgesDue(live, now, rules = RULES) {
 }
 
 /** Has the live session run past a goal (so it should end now)? Returns the stop text, or null. */
-function stopNow(s, live, now) {
+export function stopNow(s, live, now) {
   if (live.shortOn && s.short.max !== null && s.short.used >= s.short.max) return stopText(s, live.app, 'short');
   if (now < live.paidFrom) return null; // still in free minutes
-  const goal = s.goals.find((g) => g.apps.includes(live.app));
-  return goal && goal.used >= goal.max ? stopText(s, live.app, 'goal', goal) : null;
+  const goal = s.goals.find((g) => g.apps.includes(live.app) && g.used >= g.max);
+  return goal ? stopText(s, live.app, 'goal', goal) : null;
 }
 
-function nudgeMessage(s, live, now) {
-  const stop = stopNow(s, live, now);
+export function nudgeMessage(s, live, now, { ignoreStop = false } = {}) {
+  const stop = ignoreStop ? null : stopNow(s, live, now);
   const { due, normal, mins } = nudgesDue(live, now);
   if (stop) return { due, stop: true, title: '⛔ Goal reached', body: stop };
   if (due === 0) return { due: 0 };
@@ -425,11 +426,18 @@ async function nudgeTick() {
   const msg = nudgeMessage(s, live, now);
   const { due } = msg;
   const key = `${live.app}@${live.origin}`;
-  if (msg.stop) { // once per run, the moment a goal is crossed
-    if (nudged.get(`${key}:stop`)) return;
+  if (msg.stop && !nudged.get(`${key}:stop`)) { // the moment a goal is crossed: one stop push...
     nudged.set(`${key}:stop`, 1);
     const results = await push.send({ title: msg.title, body: msg.body.split('\n')[0] + ' Tap to get out.', url: `./?nudge=${encodeURIComponent(live.app ?? '')}` });
     console.log(`goal stop ${live.app} ->`, results.map((r) => `${r.host} ${r.status}`).join('; '));
+    return;
+  }
+  if (msg.stop) { // ...then the normal nudges carry on, marked as over the goal
+    const normal = nudgeMessage(s, live, now, { ignoreStop: true });
+    if (normal.due === 0 || (nudged.get(key) ?? 0) >= normal.due) return;
+    nudged.set(key, normal.due);
+    const results = await push.send({ title: `⛔ Over your goal · ${normal.title}`, body: `${normal.body} Tap to get out.`, url: `./?nudge=${encodeURIComponent(live.app ?? '')}` });
+    console.log(`nudge #${normal.due} (over goal) ${live.app} ->`, results.map((r) => `${r.host} ${r.status}`).join('; '));
     return;
   }
   if (due === 0 || (nudged.get(key) ?? 0) >= due) return;

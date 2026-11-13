@@ -143,6 +143,30 @@ class BrainTest {
         near(10.0, s.pace.today)
     }
 
+    @Test fun aGoalCrossedMidSessionStopsItButNotInFreeMinutes() {
+        var s = sum(listOf(ev(0.0, "open", "facebook"), ev(31.0, "still", "facebook")), t0 + 31 * M)
+        assertTrue(Brain.stopNow(s, s.session!!, t0 + 31 * M)!!.startsWith("⛔ Over today"))
+        s = sum(listOf(ev(0.0, "open", "facebook"), ev(31.0, "close", "facebook"), ev(40.0, "open", "linkedin")), t0 + 45 * M)
+        assertNull(Brain.stopNow(s, s.session!!, t0 + 45 * M)) // linkedin's free minutes run until 50
+        s = sum(listOf(ev(0.0, "open", "facebook"), ev(31.0, "close", "facebook"), ev(40.0, "open", "linkedin")), t0 + 51 * M)
+        assertTrue(Brain.stopNow(s, s.session!!, t0 + 51 * M)!!.startsWith("⛔ Over today"))
+        val five = goals.copy(shortMax = 5.0)
+        val under = Brain.summarize(listOf(ev(0.0, "open", "facebook"), ev(1.0, "short", "facebook")), t0 + 4 * M, five, utc)
+        assertNull(Brain.shortStop(under, "facebook"))
+        val past = Brain.summarize(listOf(ev(0.0, "open", "facebook"), ev(1.0, "short", "facebook")), t0 + 7 * M, five, utc)
+        assertTrue(Brain.shortStop(past, "facebook")!!.startsWith("⛔ Short-form goal used up"))
+    }
+
+    @Test fun anyUsedUpGoalStopsAndPaceSkipsTheInstallDay() {
+        val two = goals.copy(goals = listOf(Goal(setOf("facebook"), 20.0), Goal(setOf("facebook", "instagram"), 40.0)))
+        val s = Brain.summarize(listOf(ev(0.0, "open", "instagram"), ev(25.0, "close", "instagram"), ev(30.0, "open", "facebook"),
+            ev(46.0, "close", "facebook"), ev(50.0, "open", "facebook")), t0 + 50 * M, two, utc)
+        assertTrue(Brain.decide(s, "facebook", false, two).stop)
+        val fresh = sum(listOf(ev(-780.0, "open", "facebook"), ev(-770.0, "close", "facebook"), ev(-20.0, "open", "facebook"), ev(-15.0, "close", "facebook")), t0)
+        assertEquals(0, fresh.pace.days)
+        assertNull(fresh.pace.avg)
+    }
+
     @Test fun summaryCountsDaysAndGateText() {
         val s = Brain.summarize(listOf(ev(0.0, "open"), ev(30.0, "close")), t0 + 31 * M, BrainRules(), utc)
         assertEquals(14, s.days.size)
