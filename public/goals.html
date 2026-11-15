@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mush Goals</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Mush">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+  :root { --bg: #fbf7f4; --card: #fff; --ink: #231d2b; --muted: #776f80; --line: #ece4de; --accent: #d9577f; --chip: #f4eee9; --warn: #b5602a; color-scheme: light; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #17141f; --card: #221d2c; --ink: #f3eef7; --muted: #a59cb1; --line: #322b3e; --accent: #ff93b6; --chip: #2c2638; --warn: #ffb27a; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --bg: #17141f; --card: #221d2c; --ink: #f3eef7; --muted: #a59cb1; --line: #322b3e; --accent: #ff93b6; --chip: #2c2638; --warn: #ffb27a; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 ui-rounded, "SF Pro Rounded", system-ui, -apple-system, sans-serif;
+    padding: calc(env(safe-area-inset-top) + 12px) 16px calc(env(safe-area-inset-bottom) + 40px); }
+  main { max-width: 620px; margin: 0 auto; }
+  header { display: flex; justify-content: space-between; align-items: center; }
+  header h1 { font-size: 20px; margin: 0; }
+  a { color: var(--accent); }
+  header a { text-decoration: none; font-size: 15px; }
+  p { margin: 8px 0 0; }
+  .muted { color: var(--muted); font-size: 15px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 16px; margin-top: 16px; }
+  h2 { font-size: 17px; margin: 0 0 8px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .chips label { background: var(--chip); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: 15px; cursor: pointer; user-select: none; }
+  .chips input { position: absolute; opacity: 0; pointer-events: none; }
+  .chips label:has(input:checked) { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .chips label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .mins { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  input[type=number] { width: 5.5em; font: inherit; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+  .radio { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  button { font: inherit; border-radius: 12px; border: 1px solid var(--line); background: var(--chip); color: var(--ink); padding: 10px 14px; cursor: pointer; }
+  button.main { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; width: 100%; margin-top: 16px; }
+  button.link { background: none; border: none; color: var(--accent); padding: 4px 0; font-size: 15px; }
+  .note { border-left: 3px solid var(--warn); padding: 8px 12px; margin-top: 16px; background: var(--card); border-radius: 0 12px 12px 0; }
+  .note b { color: var(--warn); }
+  .status { margin-top: 12px; min-height: 1.5em; }
+  .err { color: var(--warn); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Goals</h1>
+    <a href="./">Done</a>
+  </header>
+  <p class="muted">A daily budget of scrolling, shared by the apps you pick. Free minutes don't count.
+    When a goal is used up, Mush only offers <i>Back away</i>.</p>
+  <p class="muted">Tighter goals start right away. Looser ones (more minutes, fewer apps, a goal removed,
+    more short-form) start tomorrow, so a hard stop can't be talked out of on the spot.</p>
+
+  <div class="note" id="pending" hidden></div>
+  <div id="goals"></div>
+  <button class="link" id="add">+ Add a goal</button>
+
+  <section class="card">
+    <h2>Short-form video</h2>
+    <p class="muted">Reels, Shorts, TikTok, Stories: any upright video filling the screen.</p>
+    <label class="radio"><input type="radio" name="short" value="none"> None at all</label>
+    <label class="radio"><input type="radio" name="short" value="some"> Up to <input type="number" id="shortMin" min="1" max="1440" inputmode="numeric" value="10"> min a day</label>
+    <label class="radio"><input type="radio" name="short" value="off"> No limit</label>
+  </section>
+
+  <button class="main" id="save">Save goals</button>
+  <div class="status" id="status"></div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const NAMES = { tiktok: 'TikTok', youtube: 'YouTube', x: 'X', instagram: 'Instagram', reddit: 'Reddit', snapchat: 'Snapchat', facebook: 'Facebook', threads: 'Threads', linkedin: 'LinkedIn' };
+const pretty = (a) => (Object.hasOwn(NAMES, a) ? NAMES[a] : a[0].toUpperCase() + a.slice(1));
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// Inside the Android app on its own, the goals live on the phone (the MushApp bridge); otherwise on the server.
+const bridge = window.MushApp && typeof window.MushApp.goals === 'function' && window.MushApp.goals() ? window.MushApp : null;
+async function load() {
+  if (bridge) return JSON.parse(bridge.goals());
+  const r = await fetch('api/settings', { cache: 'no-store' });
+  if (!r.ok) throw new Error(`server said ${r.status}`);
+  return r.json();
+}
+async function store(next) {
+  if (bridge) {
+    const out = bridge.saveGoals(JSON.stringify(next));
+    if (!out) throw new Error('those goals didn\'t look right');
+    return JSON.parse(out);
+  }
+  const r = await fetch('api/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(next) });
+  if (!r.ok) throw new Error(r.status === 400 ? 'those goals didn\'t look right' : `server said ${r.status}`);
+  return r.json();
+}
+
+let view = null;
+let draft = [];
+
+const describe = (s) => {
+  const parts = s.goals.map((g) => `${g.apps.map(pretty).join(' + ')} ${g.max} min`);
+  parts.push(s.shortMax === null ? 'short-form: no limit' : s.shortMax === 0 ? 'no short-form' : `short-form ${s.shortMax} min`);
+  return parts.join(' · ');
+};
+
+function render() {
+  $('goals').innerHTML = draft.map((g, i) => `
+    <section class="card" data-i="${i}">
+      <h2><span>Goal ${draft.length > 1 ? i + 1 : ''}</span><button class="link" data-remove="${i}">Remove</button></h2>
+      <div class="chips">${view.apps.map((a) => `<label><input type="checkbox" data-app="${esc(a)}" ${g.apps.includes(a) ? 'checked' : ''}>${esc(pretty(a))}</label>`).join('')}</div>
+      <div class="mins">At most <input type="number" min="0" max="1440" inputmode="numeric" data-max value="${g.max}"> min a day, together</div>
+    </section>`).join('') || '<p class="muted card">No goals yet.</p>';
+  for (const b of document.querySelectorAll('[data-remove]')) b.onclick = () => { readDraft(); draft.splice(Number(b.dataset.remove), 1); render(); };
+  if (view.pending) {
+    $('pending').hidden = false;
+    $('pending').innerHTML = `<b>From tomorrow:</b> ${esc(describe(view.pending))}<br><button class="link" id="keep">Keep today's goals instead</button>`;
+    $('keep').onclick = () => save({ goals: view.goals, shortMax: view.shortMax });
+  } else $('pending').hidden = true;
+}
+
+// An empty box is not 0 (that would be an instant hard stop you couldn't undo until tomorrow).
+const whole = (v) => (String(v).trim() === '' ? NaN : Number(v));
+
+function readDraft() {
+  draft = [...document.querySelectorAll('#goals section')].map((sec) => ({
+    apps: [...sec.querySelectorAll('[data-app]:checked')].map((c) => c.dataset.app),
+    max: whole(sec.querySelector('[data-max]').value),
+  }));
+}
+
+function shortValue() {
+  const v = document.querySelector('input[name=short]:checked')?.value;
+  if (v === 'none') return 0;
+  if (v === 'some') return whole($('shortMin').value);
+  return null;
+}
+
+function show(s) {
+  view = s;
+  // Edit what you'll have tomorrow if a change is waiting, else what's in force.
+  const base = s.pending ?? s;
+  draft = base.goals.map((g) => ({ apps: [...g.apps], max: g.max }));
+  document.querySelector(`input[name=short][value=${base.shortMax === null ? 'off' : base.shortMax === 0 ? 'none' : 'some'}]`).checked = true;
+  if (base.shortMax > 0) $('shortMin').value = base.shortMax;
+  render();
+}
+
+async function save(next) {
+  $('status').textContent = 'Saving…';
+  $('status').className = 'status';
+  try {
+    const s = await store(next);
+    show(s);
+    $('status').textContent = s.pending ? 'Saved. That loosens today\'s goals, so it starts tomorrow.' : 'Saved. In force now.';
+  } catch (e) {
+    $('status').textContent = `Couldn't save: ${e.message}.`;
+    $('status').className = 'status err';
+  }
+}
+
+$('add').onclick = () => { readDraft(); draft.push({ apps: [], max: 30 }); render(); };
+$('shortMin').onfocus = () => { document.querySelector('input[name=short][value=some]').checked = true; };
+$('save').onclick = () => {
+  readDraft();
+  const bad = draft.find((g) => !g.apps.length || !Number.isInteger(g.max) || g.max < 0 || g.max > 1440);
+  const shortMax = shortValue();
+  if (bad) { $('status').textContent = 'Each goal needs at least one app and whole minutes (0 to 1440).'; $('status').className = 'status err'; return; }
+  if (shortMax !== null && (!Number.isInteger(shortMax) || shortMax < 1 || shortMax > 1440)) { $('status').textContent = 'Short-form minutes: a whole number from 1 to 1440.'; $('status').className = 'status err'; return; }
+  save({ goals: draft, shortMax });
+};
+
+load().then(show, (e) => { $('status').textContent = `Couldn't load your goals: ${e.message}.`; $('status').className = 'status err'; });
+</script>
+</body>
+</html>

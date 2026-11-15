@@ -30,6 +30,38 @@ data class BrainRules(
 /** A daily budget of paid minutes (free minutes don't count) shared by these apps. */
 data class Goal(val apps: Set<String>, val max: Double)
 
+/**
+ * The goals you set in the app: what's in force, and a looser change waiting for `pending.from`.
+ * The same rules as server.mjs (looser, adoptGoals, settleGoals).
+ */
+data class GoalSet(val goals: List<Goal>, val shortMax: Double?, val pending: Pending? = null) {
+    data class Pending(val goals: List<Goal>, val shortMax: Double?, val from: Long)
+
+    /** Within the page's bounds: up to 8 goals of 1 to 20 apps, whole minutes from 0 to 1440. */
+    fun valid() = goals.size <= 8 && goals.all { it.apps.isNotEmpty() && it.apps.size <= 20 && it.max in 0.0..1440.0 && it.max % 1.0 == 0.0 } &&
+        (shortMax == null || (shortMax in 0.0..1440.0 && shortMax % 1.0 == 0.0))
+
+    /** True if `next` allows more scrolling anywhere: a goal dropped, raised or split, or more short-form. */
+    fun looserThis(next: GoalSet): Boolean {
+        // An old goal still holds only if one new goal covers all its apps within its minutes. (A split, even to
+        // a smaller total, waits: minutes already used in one part stop counting against the others today.)
+        fun holds(g: Goal) = next.goals.any { n -> n.max <= g.max && n.apps.containsAll(g.apps) }
+        if (!goals.all(::holds)) return true
+        val cur = shortMax ?: return false
+        return next.shortMax == null || next.shortMax > cur
+    }
+
+    /** Saving: tighter (or the same) starts now and drops a waiting change; looser waits until the next midnight. */
+    fun adopt(next: GoalSet, now: Long, zone: ZoneId = ZoneId.systemDefault()): GoalSet {
+        if (!looserThis(next)) return GoalSet(next.goals, next.shortMax)
+        val from = Instant.ofEpochMilli(now).atZone(zone).toLocalDate().plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        return GoalSet(goals, shortMax, Pending(next.goals, next.shortMax, from))
+    }
+
+    /** The goals in force at `now`: a waiting change takes over once its day has come. */
+    fun settle(now: Long): GoalSet = pending?.takeIf { now >= it.from }?.let { GoalSet(it.goals, it.shortMax) } ?: this
+}
+
 data class Event(val t: Long, val type: String, val app: String?)
 
 data class Session(
@@ -48,7 +80,7 @@ data class Session(
 
 class Replayed(val health: Double, val session: Session?, val sessions: List<Session>)
 
-data class Day(val date: String, var minutes: Double = 0.0, var opens: Int = 0, var resisted: Int = 0)
+data class Day(val date: String, var minutes: Double = 0.0, var opens: Int = 0, var resisted: Int = 0, var over: Boolean = false)
 
 class GoalUse(val goal: Goal, val used: Double)
 class Pace(val today: Double, val avg: Double?, val days: Int)
@@ -231,12 +263,16 @@ object Brain {
         val days = HashMap<String, Day>()
         // Free minutes count nowhere: not in today's minutes, the chart, pace or goals (only appsFree shows them).
         fun paidStart(s: Session) = minOf(maxOf(s.paidFrom, s.start), s.end)
+        val dayApp = HashMap<Pair<String, String?>, Double>() // paid minutes per day and app, to mark the days a goal was broken
         for (s in r.sessions) {
-            val d = days.getOrPut(dayKey(s.start, zone)) { Day(dayKey(s.start, zone)) }
+            val k = dayKey(s.start, zone)
+            val d = days.getOrPut(k) { Day(k) }
             if (!s.cont) d.opens += 1
             d.minutes += (s.end - paidStart(s)) / MIN
+            dayApp[k to s.app] = (dayApp[k to s.app] ?: 0.0) + (s.end - paidStart(s)) / MIN
             if (s.resisted) d.resisted += 1
         }
+        for (d in days.values) d.over = rules.goals.any { g -> g.apps.sumOf { dayApp[d.date to it] ?: 0.0 } > g.max }
         // Step by calendar day, not 24 h, so the day the clocks change is not doubled or dropped.
         val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
         val last14 = (13 downTo 0).map { i ->

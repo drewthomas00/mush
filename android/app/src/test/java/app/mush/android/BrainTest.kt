@@ -184,4 +184,44 @@ class BrainTest {
         assertEquals(1, s.today.opens)
         assertTrue(Brain.gateText(s, "ig").startsWith("🧠 Mush "))
     }
+
+    @Test fun theChartMarksOnlyDaysAGoalWasBroken() {
+        val s = sum(listOf(ev(-1470.0, "open", "instagram"), ev(-1400.0, "close", "instagram"), ev(-60.0, "open", "facebook"), ev(-25.0, "close", "facebook")), t0)
+        assertFalse(s.days[s.days.size - 2].over)
+        assertTrue(s.days.last().over)
+        assertFalse(s.days.first().over)
+    }
+
+    @Test fun looserGoalsWaitUntilTomorrow() {
+        val fbli = GoalSet(listOf(Goal(setOf("facebook", "linkedin"), 30.0)), 0.0)
+        fun g(vararg goals: Goal, short: Double? = 0.0) = GoalSet(goals.toList(), short)
+        assertFalse(fbli.looserThis(fbli))
+        assertFalse(fbli.looserThis(g(Goal(setOf("facebook", "linkedin"), 20.0))))
+        assertFalse(fbli.looserThis(g(Goal(setOf("facebook", "instagram", "linkedin"), 30.0))))
+        assertFalse(fbli.looserThis(g(Goal(setOf("facebook", "linkedin"), 30.0), Goal(setOf("x"), 5.0))))
+        assertTrue(fbli.looserThis(g(Goal(setOf("facebook", "linkedin"), 45.0))))
+        assertTrue(fbli.looserThis(g(Goal(setOf("facebook"), 30.0))))
+        assertTrue(fbli.looserThis(g(Goal(setOf("facebook"), 30.0), Goal(setOf("linkedin"), 30.0))))
+        assertTrue(fbli.looserThis(g(Goal(setOf("facebook"), 15.0), Goal(setOf("linkedin"), 10.0)))) // split, even to 25: used minutes would stop counting
+        assertTrue(fbli.looserThis(g()))
+        assertTrue(fbli.looserThis(GoalSet(fbli.goals, 5.0)))
+        assertTrue(fbli.looserThis(GoalSet(fbli.goals, null)))
+        assertFalse(GoalSet(fbli.goals, null).looserThis(GoalSet(fbli.goals, 10.0)))
+
+        val morning = t0 - 3 * H // 09:00 UTC
+        val st = fbli.adopt(g(Goal(setOf("facebook", "linkedin"), 45.0)), morning, utc)
+        assertEquals(fbli.goals, st.goals)
+        assertEquals(t0 + 12 * H, st.pending!!.from) // the next midnight
+        assertEquals(st, st.settle(t0 + 12 * H - 1))
+        near(45.0, st.settle(t0 + 12 * H).goals[0].max)
+        assertNull(st.settle(t0 + 12 * H).pending)
+        assertNull(st.adopt(fbli, morning, utc).pending) // keep today's: drops the waiting change
+        near(10.0, st.adopt(g(Goal(setOf("facebook", "linkedin"), 10.0)), morning, utc).goals[0].max)
+
+        assertTrue(fbli.valid())
+        assertFalse(g(Goal(emptySet(), 30.0)).valid())
+        assertFalse(g(Goal(setOf("x"), 30.5)).valid())
+        assertFalse(g(Goal(setOf("x"), 2000.0)).valid())
+        assertFalse(GoalSet(emptyList(), -1.0).valid())
+    }
 }

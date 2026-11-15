@@ -55,14 +55,14 @@ class MainActivity : Activity() {
             addView(banner, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
             addView(web, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         })
-        web.loadUrl(Api.base(this) + "/")
+        web.loadUrl(Api.base(this) + if (intent.getBooleanExtra(OPEN_GOALS, false)) "/goals" else "/")
     }
 
     override fun onResume() {
         super.onResume()
         if (!enabled()) { showBanner("Mush is off. Tap here, then Turn on Mush."); return }
         banner.visibility = View.GONE
-        web.reload()
+        if (web.url?.substringBefore('?')?.endsWith("/goals") != true) web.reload() // keep goals you're halfway through editing
         Widget.refresh(this)
         if (Api.serverConfigured(this)) Api.get(this, "/android/version.json") { body ->
             val code = runCatching { org.json.JSONObject(body!!).getInt("versionCode") }.getOrNull() ?: return@get
@@ -88,9 +88,27 @@ class MainActivity : Activity() {
         return list.split(':').any { it.equals(me, ignoreCase = true) }
     }
 
-    /** Called from the brain page (index.html) when it runs inside this app. */
+    /** Called from the pages (index.html, goals.html) when they run inside this app. */
     inner class Bridge {
         @JavascriptInterface
         fun openSetup() = runOnUiThread { this@MainActivity.openSetup() }
+
+        /** The goals on this phone for goals.html; "" with a server, which the page then asks itself. */
+        @JavascriptInterface
+        fun goals(): String = if (Api.serverConfigured(this@MainActivity)) "" else Goals.view(this@MainActivity).toString()
+
+        /** Saves goals from goals.html; "" if there's a server or they don't look right. */
+        @JavascriptInterface
+        fun saveGoals(json: String): String {
+            if (Api.serverConfigured(this@MainActivity)) return ""
+            val out = Goals.save(this@MainActivity, json) ?: return ""
+            runOnUiThread { Widget.refresh(this@MainActivity) }
+            return out.toString()
+        }
+    }
+
+    companion object {
+        /** Intent extra: open on the goals page (from Setup). */
+        const val OPEN_GOALS = "goals"
     }
 }

@@ -67,6 +67,50 @@ export const RULES = {
 
 const MIN = 60_000;
 const HOUR = 3_600_000;
+
+// ---------- goals you set from the page or the app (data/settings.json; MUSH_GOALS is the starting point) ----------
+
+/** A goal set sent by the page, checked and tidied: { goals: [{ apps, max }], shortMax } (null: no short-form goal). Null if malformed. */
+export function cleanGoals(body) {
+  if (!body || typeof body !== 'object' || !Array.isArray(body.goals) || body.goals.length > 8) return null;
+  const goals = [];
+  for (const g of body.goals) {
+    const apps = [...new Set((Array.isArray(g?.apps) ? g.apps : []).map(cleanApp).filter(Boolean))].sort();
+    const max = g?.max;
+    if (!apps.length || apps.length > 20 || !Number.isInteger(max) || max < 0 || max > 1440) return null;
+    goals.push({ apps, max });
+  }
+  const shortMax = body.shortMax;
+  if (shortMax !== null && (!Number.isInteger(shortMax) || shortMax < 0 || shortMax > 1440)) return null;
+  return { goals, shortMax };
+}
+
+/** True if `next` allows more scrolling than `cur` anywhere: a goal dropped, raised or split, or more short-form. */
+export function looser(cur, next) {
+  // An old goal still holds only if one new goal covers all its apps within its minutes. (A split, even to
+  // a smaller total, waits: minutes already used in one part stop counting against the others today.)
+  const kept = (g) => next.goals.some((n) => n.max <= g.max && g.apps.every((a) => n.apps.includes(a)));
+  if (!cur.goals.every(kept)) return true;
+  if (cur.shortMax === null) return false;
+  return next.shortMax === null || next.shortMax > cur.shortMax;
+}
+
+/**
+ * Saving goals. Tighter (or the same) starts now and drops any change that was waiting; looser
+ * waits until the next midnight, so a hard stop can't be argued away on the spot.
+ */
+export function adoptGoals(state, next, now) {
+  if (!looser(state, next)) return { goals: next.goals, shortMax: next.shortMax, pending: null };
+  const n = new Date(now);
+  const from = new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1).getTime();
+  return { goals: state.goals, shortMax: state.shortMax, pending: { goals: next.goals, shortMax: next.shortMax, from } };
+}
+
+/** The goals in force at `now`: a waiting change takes over once its day has come. */
+export function settleGoals(state, now) {
+  if (!state.pending || now < state.pending.from) return state;
+  return { goals: state.pending.goals, shortMax: state.pending.shortMax, pending: null };
+}
 const clamp = (h) => Math.max(0, Math.min(100, h));
 
 // ---------- event log ----------
@@ -249,23 +293,29 @@ export function summarize(evs, now, rules = RULES) {
   const r = replay(evs, now, rules);
   const days = new Map();
   const day = (k) => {
-    if (!days.has(k)) days.set(k, { date: k, minutes: 0, opens: 0, resisted: 0 });
+    if (!days.has(k)) days.set(k, { date: k, minutes: 0, opens: 0, resisted: 0, over: false });
     return days.get(k);
   };
   // Free minutes count nowhere: not in today's minutes, the chart, pace or goals (only appsFree shows them).
   const paidStart = (s) => Math.min(Math.max(s.paidFrom ?? s.start, s.start), s.end);
+  const dayApp = new Map(); // "day|app" → paid minutes, to mark the days a goal was broken
   for (const s of r.sessions) {
-    const d = day(dayKey(s.start));
+    const k = dayKey(s.start);
+    const d = day(k);
     if (!s.cont) d.opens += 1;
     d.minutes += (s.end - paidStart(s)) / MIN;
     if (s.resisted) d.resisted += 1;
+    dayApp.set(`${k}|${s.app}`, (dayApp.get(`${k}|${s.app}`) ?? 0) + (s.end - paidStart(s)) / MIN);
+  }
+  for (const d of days.values()) {
+    d.over = rules.goals.some((g) => g.apps.reduce((sum, a) => sum + (dayApp.get(`${d.date}|${a}`) ?? 0), 0) > g.max);
   }
   const last14 = [];
   const n = new Date(now);
   for (let i = 13; i >= 0; i--) {
     // Step by calendar day, not 24 h, so the day the clocks change is not doubled or dropped.
     const k = dayKey(new Date(n.getFullYear(), n.getMonth(), n.getDate() - i, 12).getTime());
-    last14.push(days.get(k) ?? { date: k, minutes: 0, opens: 0, resisted: 0 });
+    last14.push(days.get(k) ?? { date: k, minutes: 0, opens: 0, resisted: 0, over: false });
   }
   const today = last14.at(-1);
   const minutesByApp = new Map(); // paid minutes, which is also what goals count
@@ -376,6 +426,42 @@ function gateText(s, app) {
 // ---------- nudges ----------
 
 let push = null;
+
+const SETTINGS = path.join(path.dirname(DATA), 'settings.json');
+let goalState = { goals: RULES.goals, shortMax: RULES.shortMax, pending: null };
+
+function loadGoals() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(SETTINGS, 'utf8'));
+    const cur = cleanGoals(raw);
+    if (!cur) throw new Error('malformed');
+    const p = raw.pending ? cleanGoals(raw.pending) : null;
+    useGoals({ ...cur, pending: p && Number.isFinite(raw.pending.from) ? { ...p, from: raw.pending.from } : null });
+  } catch (e) {
+    if (e.code !== 'ENOENT') console.error(`settings.json unusable (${e.message}); using MUSH_GOALS`);
+  }
+}
+function useGoals(st) {
+  goalState = st;
+  RULES.goals = st.goals;
+  RULES.shortMax = st.shortMax;
+}
+function saveGoals(st) {
+  fs.mkdirSync(path.dirname(SETTINGS), { recursive: true });
+  fs.writeFileSync(SETTINGS + '.tmp', JSON.stringify(st, null, 1) + '\n'); // disk first, then the rules
+  fs.renameSync(SETTINGS + '.tmp', SETTINGS);
+  useGoals(st);
+}
+function settle(now) {
+  const st = settleGoals(goalState, now);
+  if (st !== goalState) saveGoals(st);
+}
+/** What the goals page shows: the goals in force, any change waiting for tomorrow, and the apps to pick from. */
+function goalsView() {
+  const apps = new Set([...Object.keys(NAMES), ...goalState.goals.flatMap((g) => g.apps), ...(goalState.pending?.goals ?? []).flatMap((g) => g.apps)]);
+  for (const ev of events) if (ev.type === 'open' && ev.app) apps.add(ev.app); // whatever your devices have reported
+  return { goals: goalState.goals, shortMax: goalState.shortMax, pending: goalState.pending, apps: [...apps].sort() };
+}
 const nudged = new Map(); // `${app}@${origin}` -> nudges sent for that run
 
 function nudgeText(s, n, mins) {
@@ -420,8 +506,9 @@ export function nudgeMessage(s, live, now, { ignoreStop = false } = {}) {
 }
 
 async function nudgeTick() {
-  if (!push?.count) return;
   const now = clock();
+  settle(now);
+  if (!push?.count) return;
   const s = summarize(events, now);
   const live = s.session;
   if (!live || live.dev === 'android') return; // the Android app nudges on the phone itself
@@ -482,7 +569,7 @@ function readJson(req, limit = 8192) {
   });
 }
 
-const PAGES = { '/': 'index.html', '/setup': 'setup.html', '/android': 'android.html' };
+const PAGES = { '/': 'index.html', '/setup': 'setup.html', '/goals': 'goals.html', '/android': 'android.html' };
 
 function serveStatic(req, res, pathname) {
   let base = PUBLIC;
@@ -506,6 +593,7 @@ function handle(req, res) {
   const app = cleanApp(url.searchParams.get('app'));
   const dev = url.searchParams.get('dev') === 'android' ? 'android' : undefined;
   const now = clock();
+  settle(now);
 
   if (!pathname.startsWith('/api/')) {
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'method not allowed');
@@ -596,6 +684,20 @@ function handle(req, res) {
       return send(res, 200, JSON.stringify(nudgeMessage(s, live, now)), 'application/json');
     }
 
+    case '/api/settings':
+      // The goals page: GET shows them, POST (JSON only, so another site can't post a form here) changes them.
+      if (req.method === 'GET') return send(res, 200, JSON.stringify(goalsView()), 'application/json');
+      if (!String(req.headers['content-type'] ?? '').startsWith('application/json')) return send(res, 415, 'json only');
+      readJson(req).then((body) => {
+        const next = cleanGoals(body);
+        if (!next) return send(res, 400, 'bad goals');
+        saveGoals(adoptGoals(goalState, next, now));
+        console.log(`goals: ${JSON.stringify(next)}${goalState.pending ? ' from tomorrow' : ''}`);
+        send(res, 200, JSON.stringify(goalsView()), 'application/json');
+      }, () => send(res, 400, 'bad request'))
+        .catch((e) => { console.error('saving goals failed', e); send(res, 500, 'error'); });
+      return;
+
     case '/api/rules':
       // Detection rules for the Android app; edit rules/android.json, no rebuild needed.
       return fs.readFile(ANDROID_RULES, (err, buf) => (err ? send(res, 500, 'no rules') : send(res, 200, buf, 'application/json')));
@@ -629,6 +731,7 @@ function handle(req, res) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   push = new Push(PUSH_FILE);
+  loadGoals();
   setInterval(() => nudgeTick().catch((e) => console.error('nudge failed', e)), 20_000);
   http.createServer((req, res) => {
     try { handle(req, res); } catch (e) { console.error(e); send(res, 500, 'error'); }

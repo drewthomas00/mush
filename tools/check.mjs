@@ -1,6 +1,6 @@
 // Quick checks of the health model: node tools/check.mjs
 import assert from 'node:assert/strict';
-import { replay, nudgesDue, RULES, summarize, decide, stopNow, nudgeMessage } from '../server.mjs';
+import { replay, nudgesDue, RULES, summarize, decide, stopNow, nudgeMessage, cleanGoals, looser, adoptGoals, settleGoals } from '../server.mjs';
 
 const M = 60_000, H = 3_600_000, t0 = Date.UTC(2026, 0, 1, 12);
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-6, `${a} != ${b}`);
@@ -202,5 +202,44 @@ near(sm.short.used, 0);
 // floor
 r = flat([ev(0, 'open'), ev(44, 'close'), ev(44, 'open'), ev(88, 'close'), ev(88, 'open'), ev(130, 'close')], t0 + 130 * M);
 near(r.health, 0);
+
+// ---- goals set from the page: tighter starts now, looser waits until the next midnight
+const FBLI = { goals: [{ apps: ['facebook', 'linkedin'], max: 30 }], shortMax: 0 };
+const L = (goals, shortMax = 0) => ({ goals, shortMax });
+assert.equal(looser(FBLI, FBLI), false);
+assert.equal(looser(FBLI, L([{ apps: ['facebook', 'linkedin'], max: 20 }])), false);                 // lower
+assert.equal(looser(FBLI, L([{ apps: ['facebook', 'instagram', 'linkedin'], max: 30 }])), false);    // more apps in the budget
+assert.equal(looser(FBLI, L([{ apps: ['facebook', 'linkedin'], max: 30 }, { apps: ['x'], max: 5 }])), false); // a goal added
+assert.equal(looser(FBLI, L([{ apps: ['facebook', 'linkedin'], max: 45 }])), true);                  // raised
+assert.equal(looser(FBLI, L([{ apps: ['facebook'], max: 30 }])), true);                              // an app dropped
+assert.equal(looser(FBLI, L([{ apps: ['facebook'], max: 30 }, { apps: ['linkedin'], max: 30 }])), true); // split: 60 together
+assert.equal(looser(FBLI, L([{ apps: ['facebook'], max: 15 }, { apps: ['linkedin'], max: 10 }])), true); // split, even to 25: today's used minutes would stop counting
+assert.equal(looser(FBLI, L([])), true);                                                              // removed
+assert.equal(looser(FBLI, L(FBLI.goals, 5)), true);                                                  // short-form allowed
+assert.equal(looser(FBLI, L(FBLI.goals, null)), true);
+assert.equal(looser(L(FBLI.goals, null), L(FBLI.goals, 10)), false);                                  // a short-form limit added
+const morning = new Date(2026, 0, 1, 9).getTime();
+let st = adoptGoals({ ...FBLI, pending: null }, L([{ apps: ['facebook', 'linkedin'], max: 45 }]), morning);
+assert.deepEqual(st.goals, FBLI.goals); assert.equal(st.pending.goals[0].max, 45);
+assert.equal(st.pending.from, new Date(2026, 0, 2).getTime());
+assert.equal(settleGoals(st, new Date(2026, 0, 1, 23, 59).getTime()), st);
+assert.equal(settleGoals(st, new Date(2026, 0, 2).getTime()).goals[0].max, 45);
+assert.equal(settleGoals(st, new Date(2026, 0, 2).getTime()).pending, null);
+const kept = adoptGoals(st, FBLI, morning); // "keep today's": the same goals, so now, and the waiting change is dropped
+assert.equal(kept.pending, null); assert.deepEqual(kept.goals, FBLI.goals);
+assert.equal(adoptGoals(st, L([{ apps: ['facebook', 'linkedin'], max: 10 }]), morning).goals[0].max, 10);
+// the chart marks a day only when a goal was broken that day, not for minutes in other apps
+sm = summarize([ev(-1470, 'open', 'instagram'), ev(-1400, 'close', 'instagram'), ev(-60, 'open', 'facebook'), ev(-25, 'close', 'facebook')], t0, G);
+assert.equal(sm.days.at(-2).over, false); assert.equal(sm.days.at(-1).over, true); assert.equal(sm.days[0].over, false);
+// what the page may send
+assert.deepEqual(cleanGoals({ goals: [{ apps: ['LinkedIn', 'facebook', 'facebook'], max: 30 }], shortMax: 0 }), { goals: [{ apps: ['facebook', 'linkedin'], max: 30 }], shortMax: 0 });
+assert.equal(cleanGoals({ goals: [{ apps: [], max: 30 }], shortMax: 0 }), null);
+assert.equal(cleanGoals({ goals: [{ apps: ['x'], max: 30.5 }], shortMax: 0 }), null);
+assert.equal(cleanGoals({ goals: [{ apps: ['x'], max: '30' }], shortMax: 0 }), null);
+assert.equal(cleanGoals({ goals: [{ apps: ['x'], max: 2000 }], shortMax: 0 }), null);
+assert.equal(cleanGoals({ goals: [], shortMax: -1 }), null);
+assert.equal(cleanGoals({ goals: [] }), null); // shortMax must be said, even if null
+assert.equal(cleanGoals({ goals: Array(9).fill({ apps: ['x'], max: 1 }), shortMax: null }), null);
+assert.deepEqual(cleanGoals({ goals: [], shortMax: null }), { goals: [], shortMax: null });
 
 console.log('all checks passed');

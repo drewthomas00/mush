@@ -25,7 +25,7 @@ open class MushWebClient(private val ctx: Context) : WebViewClient() {
             return response("application/json", Local.get(ctx).stateJson().toString().toByteArray())
         }
         if (path.startsWith("/api/")) return response("text/plain", "not found".toByteArray(), 404)
-        val rel = when (path) { "/" -> "index.html"; "/setup" -> "setup.html"; else -> path.removePrefix("/") }
+        val rel = when (path) { "/" -> "index.html"; "/setup" -> "setup.html"; "/goals" -> "goals.html"; else -> path.removePrefix("/") }
         if (rel.contains("..")) return response("text/plain", "not found".toByteArray(), 404)
         return runCatching {
             response(mime(rel), ctx.assets.open("web/$rel").use { it.readBytes() })

@@ -79,7 +79,7 @@ class SetupActivity : Activity() {
         col.addView(gatesBox)
 
         heading("Daily goal")
-        text("A daily budget of scrolling, shared by the apps you tick (free minutes don't count). When it's used up, the prompt only offers Back away.", 14f, muted)
+        text("A daily budget of scrolling, shared by the apps you pick (free minutes don't count). When it's used up, the prompt only offers Back away. Looser goals start tomorrow.", 14f, muted)
         goalsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         col.addView(goalsBox)
 
@@ -160,6 +160,28 @@ class SetupActivity : Activity() {
         return list.split(':').any { it.equals(me, ignoreCase = true) }
     }
 
+    /** "Facebook + LinkedIn: 30 min a day · No short-form", plus a change waiting for tomorrow. */
+    private fun describeGoals(o: JSONObject): String {
+        fun one(set: JSONObject): String {
+            val parts = mutableListOf<String>()
+            val goals = set.getJSONArray("goals")
+            if (goals.length() == 0) parts += "No daily goal yet"
+            for (i in 0 until goals.length()) {
+                val g = goals.getJSONObject(i)
+                val apps = g.getJSONArray("apps")
+                parts += (0 until apps.length()).joinToString(" + ") { Brain.pretty(apps.getString(it)) } + ": ${g.getInt("max")} min a day"
+            }
+            parts += when {
+                set.isNull("shortMax") -> "Short-form: no limit"
+                set.getInt("shortMax") == 0 -> "No short-form"
+                else -> "Short-form: ${set.getInt("shortMax")} min a day"
+            }
+            return parts.joinToString("\n")
+        }
+        val now = one(o)
+        return if (o.isNull("pending")) now else now + "\n\nFrom tomorrow:\n" + one(o.getJSONObject("pending"))
+    }
+
     private fun refresh() {
         val p = Api.prefs(this)
         val shared = Api.serverConfigured(this)
@@ -203,44 +225,22 @@ class SetupActivity : Activity() {
         }
         if (shared) gatesBox.addView(TextView(this).apply { text = "Free minutes come from your server's rules."; setTextColor(muted) })
 
-        // Daily goal: on its own, set here; with a server, MUSH_GOALS there.
+        // Daily goal: a summary here; they're edited on the goals page (on the phone, or your server's).
         goalsBox.removeAllViews()
+        val summary = TextView(this).apply { setTextColor(ink) }
+        goalsBox.addView(summary)
+        goalsBox.addView(Button(this).apply {
+            text = "Edit goals"
+            isAllCaps = false
+            setOnClickListener { startActivity(Intent(this@SetupActivity, MainActivity::class.java).putExtra(MainActivity.OPEN_GOALS, true)) }
+        })
         if (shared) {
-            goalsBox.addView(TextView(this).apply { text = "Goals come from your server (MUSH_GOALS)."; setTextColor(muted) })
-        } else {
-            val chosen = p.getStringSet("goalApps", null).orEmpty()
-            for (app in rules.gates.map { it.app }.distinct()) {
-                goalsBox.addView(android.widget.CheckBox(this).apply {
-                    text = Brain.pretty(app)
-                    setTextColor(ink)
-                    isChecked = app in chosen
-                    setOnCheckedChangeListener { _, on ->
-                        val now = p.getStringSet("goalApps", null).orEmpty()
-                        p.edit().putStringSet("goalApps", if (on) now + app else now - app).apply()
-                    }
-                })
+            summary.text = "Checking your server…"
+            Api.get(this, "/api/settings") { body ->
+                summary.text = runCatching { describeGoals(JSONObject(body!!)) }.getOrElse { "Can't reach your server." }
             }
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            row.addView(TextView(this).apply { text = "At most "; setTextColor(ink) })
-            row.addView(EditText(this).apply {
-                setText(p.getInt("goalMin", 0).takeIf { it > 0 }?.toString() ?: "")
-                hint = "30"
-                setTextColor(ink)
-                setHintTextColor(muted)
-                inputType = InputType.TYPE_CLASS_NUMBER
-                setEms(3)
-                setOnFocusChangeListener { v, has ->
-                    if (!has) p.edit().putInt("goalMin", ((v as EditText).text.toString().toIntOrNull() ?: 0).coerceIn(0, 1440)).apply()
-                }
-            })
-            row.addView(TextView(this).apply { text = " min a day, together"; setTextColor(ink) })
-            goalsBox.addView(row)
-            goalsBox.addView(Switch(this).apply {
-                text = "No short-form video at all"
-                setTextColor(ink)
-                isChecked = p.getBoolean("noShort", false)
-                setOnCheckedChangeListener { _, on -> p.edit().putBoolean("noShort", on).apply() }
-            })
+        } else {
+            summary.text = describeGoals(Goals.view(this))
         }
 
         ignoredBox.removeAllViews()

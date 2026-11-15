@@ -60,18 +60,21 @@
   .goal .row { display: flex; justify-content: space-between; font-size: 15px; }
   .goal .row span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
   .goal .over span:last-child { color: var(--bad); font-weight: 700; }
+  .goal a { color: var(--bar); font-size: 15px; font-weight: 600; text-decoration: none; }
   .goal .bar { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; margin-top: 6px; }
   .goal .bar i { display: block; height: 100%; border-radius: 99px; background: var(--good); }
   .goal .over .bar i, .goal .bar i.over { background: var(--bad); }
   .apps { margin-top: 12px; display: grid; gap: 6px; }
   .apps div { display: flex; justify-content: space-between; font-size: 15px; }
   .apps span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
-  .chart { position: relative; display: grid; grid-template-columns: repeat(14, 1fr); gap: 4px; align-items: end; height: 120px; }
+  .chart { position: relative; display: grid; grid-template-columns: repeat(14, 1fr); gap: 4px; align-items: end; height: 120px; margin-top: 22px; }
   .chart .col { display: flex; flex-direction: column; justify-content: flex-end; height: 100%; }
   .chart .col i { display: block; border-radius: 5px 5px 2px 2px; background: var(--bar); min-height: 2px; }
   .chart .col i.over { background: var(--bar-over); }
   .chart .even { position: absolute; left: 0; right: 0; border-top: 1.5px dashed var(--muted); opacity: .55; pointer-events: none; }
   .chart .even span { position: absolute; right: 0; top: -18px; font-size: 11px; color: var(--muted); }
+  .chart .top { position: absolute; left: 0; right: 0; top: 0; border-top: 1px solid var(--line); pointer-events: none; }
+  .chart .top span { position: absolute; left: 0; top: -18px; font-size: 11px; color: var(--muted); }
   .days { display: grid; grid-template-columns: repeat(14, 1fr); gap: 4px; margin-top: 6px; text-align: center; font-size: 11px; color: var(--muted); }
   .days .today { color: var(--ink); font-weight: 700; }
   ul.recent { list-style: none; margin: 0; padding: 0; }
@@ -198,6 +201,7 @@ function render(s) {
     bars.push(`<div class="goal"><div class="row ${over ? 'over' : ''}"><span>Short-form video</span>
       <span>${Math.round(s.short.used)}${s.short.max > 0 ? ' / ' + s.short.max : ''} min${s.short.max === 0 && !over ? ' ✓' : ''}</span></div></div>`);
   }
+  bars.push(`<div class="goal"><a href="goals">${bars.length ? 'Edit goals' : 'Set a daily goal'}</a></div>`);
   $('goals').innerHTML = bars.join('');
   // Paid minutes per app; free minutes (a daily puzzle) are shown apart and count nowhere else.
   const free = s.appsFree ?? {};
@@ -209,11 +213,22 @@ function render(s) {
     }).join('');
 
   // 14-day chart with the break-even line (where a day's healing equals its rot)
+  // Scaled to your own days and goals (not the ~90 min break-even, which squashed small days flat).
+  // The line is your goals' total; the break-even (where a day's healing equals its rot) shows only if it fits.
   const even = (24 * s.rules.healPerHour) / (s.rules.drainPerMin + s.rules.healPerHour / 60);
-  const max = Math.max(even * 1.25, ...s.days.map((d) => d.minutes));
+  // A bar is marked when a goal was broken that day (with today's goals); one goal also gets its line.
+  const goals = s.goals ?? [];
+  const goalLine = goals.length === 1 ? goals[0].max : null;
+  const peak = Math.max(goalLine ?? 0, ...s.days.map((d) => d.minutes));
+  const step = peak <= 30 ? 5 : peak <= 120 ? 15 : 60;
+  const max = Math.max(10, Math.ceil((peak * 1.15) / step) * step);
+  const over = (d) => (goals.length ? d.over : d.minutes > even);
+  const line = (v, label) => `<div class="even" style="bottom:${(v / max) * 100}%"><span>${label}</span></div>`;
   $('chart').innerHTML = s.days.map((d) =>
-    `<div class="col" title="${d.date}: ${Math.round(d.minutes)} min"><i class="${d.minutes > even ? 'over' : ''}" style="height:${(d.minutes / max) * 100}%"></i></div>`).join('')
-    + `<div class="even" style="bottom:${(even / max) * 100}%"><span>break-even ${Math.round(even)}m</span></div>`;
+    `<div class="col" title="${d.date}: ${Math.round(d.minutes)} min"><i class="${over(d) ? 'over' : ''}" style="height:${(d.minutes / max) * 100}%"></i></div>`).join('')
+    + `<div class="top"><span>${max} min</span></div>`
+    + (goalLine !== null ? line(goalLine, `goal ${goalLine}m (${esc(goals[0].apps.map(pretty).join(' + '))})`) : '')
+    + (even <= max ? line(even, `break-even ${Math.round(even)}m`) : '');
   $('days').innerHTML = s.days.map((d, i) => {
     const wd = new Date(d.date + 'T12:00').toLocaleDateString([], { weekday: 'narrow' });
     return `<span class="${i === 13 ? 'today' : ''}">${wd}</span>`;
